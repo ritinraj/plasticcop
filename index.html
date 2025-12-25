@@ -1,0 +1,2830 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>EcoReport - Plastic Waste Reporting Platform</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-storage-compat.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        .camera-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: black;
+            z-index: 1000;
+            display: none;
+        }
+        .camera-container.active {
+            display: flex;
+            flex-direction: column;
+        }
+        #cameraVideo {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        #photoCanvas {
+            display: none;
+        }
+        .camera-controls {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            padding: 20px;
+            background: linear-gradient(transparent, rgba(0,0,0,0.8));
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 30px;
+        }
+        .capture-btn {
+            width: 70px;
+            height: 70px;
+            border-radius: 50%;
+            background: white;
+            border: 4px solid #22c55e;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+        .capture-btn:active {
+            transform: scale(0.95);
+        }
+        .capture-btn-inner {
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            background: #22c55e;
+            transform: scale(0.85);
+        }
+        .preview-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: black;
+            z-index: 1001;
+            display: none;
+        }
+        .preview-container.active {
+            display: flex;
+            flex-direction: column;
+        }
+        #previewImage {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+        .status-badge {
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        .status-submitted { background: #fef3c7; color: #d97706; }
+        .status-verified { background: #dbeafe; color: #2563eb; }
+        .status-collected { background: #dcfce7; color: #16a34a; }
+        .status-sold { background: #f3e8ff; color: #9333ea; }
+        .status-pending { background: #fef3c7; color: #d97706; }
+        .status-confirmed { background: #dbeafe; color: #2563eb; }
+        .status-delivered { background: #dcfce7; color: #16a34a; }
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 2000;
+            justify-content: center;
+            align-items: center;
+        }
+        .modal.active {
+            display: flex;
+        }
+        .toast {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 12px 24px;
+            border-radius: 8px;
+            color: white;
+            font-weight: 500;
+            z-index: 3000;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        .toast.show {
+            opacity: 1;
+        }
+        .toast.success { background: #16a34a; }
+        .toast.error { background: #dc2626; }
+        .toast.info { background: #2563eb; }
+        .loading-spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #22c55e;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .nav-item {
+            transition: all 0.2s;
+        }
+        .nav-item:hover, .nav-item.active {
+            background: #22c55e;
+            color: white;
+        }
+        .report-card {
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .report-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+        }
+        .otp-input {
+            caret-color: #22c55e;
+        }
+        .otp-input:focus {
+            border-color: #22c55e;
+            box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.2);
+        }
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-5px); }
+            75% { transform: translateX(5px); }
+        }
+        .shake {
+            animation: shake 0.3s ease-in-out;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <!-- Toast Notification -->
+    <div id="toast" class="toast"></div>
+
+    <!-- Camera Container -->
+    <div id="cameraContainer" class="camera-container">
+        <button id="closeCameraBtn" class="absolute top-4 left-4 z-10 w-10 h-10 bg-black/50 rounded-full text-white flex items-center justify-center">
+            <i class="fas fa-times"></i>
+        </button>
+        <video id="cameraVideo" autoplay playsinline></video>
+        <canvas id="photoCanvas"></canvas>
+        <div class="camera-controls">
+            <button id="switchCameraBtn" class="w-12 h-12 bg-white/20 rounded-full text-white flex items-center justify-center">
+                <i class="fas fa-sync-alt"></i>
+            </button>
+            <button id="captureBtn" class="capture-btn">
+                <div class="capture-btn-inner"></div>
+            </button>
+            <button id="flashBtn" class="w-12 h-12 bg-white/20 rounded-full text-white flex items-center justify-center">
+                <i class="fas fa-bolt"></i>
+            </button>
+        </div>
+    </div>
+
+    <!-- Photo Preview Container -->
+    <div id="previewContainer" class="preview-container">
+        <button id="closePreviewBtn" class="absolute top-4 left-4 z-10 w-10 h-10 bg-black/50 rounded-full text-white flex items-center justify-center">
+            <i class="fas fa-times"></i>
+        </button>
+        <img id="previewImage" src="" alt="Captured photo">
+        <div class="camera-controls">
+            <button id="retakeBtn" class="px-6 py-3 bg-red-500 text-white rounded-full font-semibold">
+                <i class="fas fa-redo mr-2"></i>Retake
+            </button>
+            <button id="confirmPhotoBtn" class="px-6 py-3 bg-green-500 text-white rounded-full font-semibold">
+                <i class="fas fa-check mr-2"></i>Use Photo
+            </button>
+        </div>
+    </div>
+
+    <!-- Image Viewer Modal -->
+    <div id="imageModal" class="modal">
+        <div class="relative max-w-4xl max-h-[90vh] m-4">
+            <button id="closeImageModal" class="absolute -top-3 -right-3 w-8 h-8 bg-white rounded-full shadow-lg flex items-center justify-center">
+                <i class="fas fa-times"></i>
+            </button>
+            <img id="modalImage" class="max-w-full max-h-[90vh] rounded-lg" src="" alt="Report image">
+        </div>
+    </div>
+
+    <!-- Main App Container -->
+    <div id="app">
+        <!-- Auth Page -->
+        <div id="authPage" class="min-h-screen flex items-center justify-center p-4">
+            <div class="bg-white rounded-2xl shadow-xl p-8 w-full max-w-md">
+                <div class="text-center mb-8">
+                    <div class="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <i class="fas fa-recycle text-4xl text-green-600"></i>
+                    </div>
+                    <h1 class="text-3xl font-bold text-gray-800">EcoReport</h1>
+                    <p class="text-gray-500 mt-2">Report Plastic Waste, Save the Planet</p>
+                </div>
+
+                <!-- Step 1: Email Entry -->
+                <div id="emailStep" class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Email Address</label>
+                        <input type="email" id="authEmail" required class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent" placeholder="your@email.com">
+                    </div>
+                    <button type="button" id="sendOtpBtn" class="w-full py-3 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 transition flex items-center justify-center">
+                        <span>Send OTP</span>
+                        <div id="sendOtpSpinner" class="loading-spinner ml-2 hidden"></div>
+                    </button>
+                    <p class="text-center text-sm text-gray-500">We'll send a 6-digit code to verify your email</p>
+                </div>
+
+                <!-- Step 2: OTP Verification -->
+                <div id="otpStep" class="space-y-4 hidden">
+                    <div class="text-center mb-4">
+                        <p class="text-gray-600">Enter the 6-digit code sent to</p>
+                        <p class="font-semibold text-gray-800" id="otpEmailDisplay">email@example.com</p>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Verification Code</label>
+                        <div class="flex gap-2 justify-center">
+                            <input type="text" maxlength="1" class="otp-input w-12 h-14 text-center text-2xl font-bold border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent" data-index="0">
+                            <input type="text" maxlength="1" class="otp-input w-12 h-14 text-center text-2xl font-bold border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent" data-index="1">
+                            <input type="text" maxlength="1" class="otp-input w-12 h-14 text-center text-2xl font-bold border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent" data-index="2">
+                            <input type="text" maxlength="1" class="otp-input w-12 h-14 text-center text-2xl font-bold border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent" data-index="3">
+                            <input type="text" maxlength="1" class="otp-input w-12 h-14 text-center text-2xl font-bold border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent" data-index="4">
+                            <input type="text" maxlength="1" class="otp-input w-12 h-14 text-center text-2xl font-bold border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent" data-index="5">
+                        </div>
+                    </div>
+                    <button type="button" id="verifyOtpBtn" class="w-full py-3 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 transition flex items-center justify-center">
+                        <span>Verify & Login</span>
+                        <div id="verifyOtpSpinner" class="loading-spinner ml-2 hidden"></div>
+                    </button>
+                    <div class="flex items-center justify-between text-sm">
+                        <button type="button" id="backToEmailBtn" class="text-gray-500 hover:text-gray-700">
+                            <i class="fas fa-arrow-left mr-1"></i>Change Email
+                        </button>
+                        <button type="button" id="resendOtpBtn" class="text-green-600 hover:text-green-700 disabled:text-gray-400" disabled>
+                            Resend OTP (<span id="resendTimer">60</span>s)
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Step 3: Complete Profile (for new users) -->
+                <div id="profileStep" class="space-y-4 hidden">
+                    <div class="text-center mb-4">
+                        <div class="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                            <i class="fas fa-user-plus text-2xl text-green-600"></i>
+                        </div>
+                        <h3 class="text-lg font-bold text-gray-800">Complete Your Profile</h3>
+                        <p class="text-sm text-gray-500">Just a few more details to get started</p>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Full Name <span class="text-red-500">*</span></label>
+                        <input type="text" id="profileNameInput" required class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent" placeholder="John Doe">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Phone Number</label>
+                        <input type="tel" id="profilePhoneInput" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent" placeholder="+1 234 567 8900">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">City</label>
+                        <input type="text" id="profileCityInput" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent" placeholder="Your city">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Account Type <span class="text-red-500">*</span></label>
+                        <div class="space-y-2">
+                            <label class="flex items-center p-3 bg-green-50 rounded-lg cursor-pointer border-2 border-transparent has-[:checked]:border-green-500">
+                                <input type="radio" name="userRole" value="citizen" checked class="w-4 h-4 text-green-600 border-gray-300 focus:ring-green-500">
+                                <div class="ml-3">
+                                    <span class="font-medium text-gray-700">Citizen</span>
+                                    <p class="text-xs text-gray-500">Report plastic waste in your area</p>
+                                </div>
+                            </label>
+                            <label class="flex items-center p-3 bg-purple-50 rounded-lg cursor-pointer border-2 border-transparent has-[:checked]:border-purple-500">
+                                <input type="radio" name="userRole" value="municipality" class="w-4 h-4 text-purple-600 border-gray-300 focus:ring-purple-500">
+                                <div class="ml-3">
+                                    <span class="font-medium text-gray-700">Municipality Admin</span>
+                                    <p class="text-xs text-gray-500">For government/municipal officials</p>
+                                </div>
+                            </label>
+                            <label class="flex items-center p-3 bg-blue-50 rounded-lg cursor-pointer border-2 border-transparent has-[:checked]:border-blue-500">
+                                <input type="radio" name="userRole" value="recycler" class="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500">
+                                <div class="ml-3">
+                                    <span class="font-medium text-gray-700">Recycling Plant</span>
+                                    <p class="text-xs text-gray-500">Buy collected plastic waste</p>
+                                </div>
+                            </label>
+                        </div>
+                    </div>
+                    <div id="companyNameField" class="hidden">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Company Name <span class="text-red-500">*</span></label>
+                        <input type="text" id="companyNameInput" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent" placeholder="Your recycling company name">
+                    </div>
+                    <button type="button" id="completeProfileBtn" class="w-full py-3 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 transition flex items-center justify-center">
+                        <span>Complete Registration</span>
+                        <div id="completeProfileSpinner" class="loading-spinner ml-2 hidden"></div>
+                    </button>
+                </div>
+
+                <!-- Login Method Toggle -->
+                <div class="mt-6 pt-6 border-t border-gray-200">
+                    <div class="flex items-center justify-center gap-4 mb-4">
+                        <button type="button" id="otpMethodBtn" class="px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-medium">OTP Login</button>
+                        <button type="button" id="passwordMethodBtn" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg text-sm font-medium">ID & Password</button>
+                    </div>
+                </div>
+
+                <!-- Password Login Section -->
+                <div id="passwordLoginSection" class="space-y-4 hidden">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">User ID / Email</label>
+                        <input type="text" id="loginUserId" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent" placeholder="Enter your ID or email">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                        <div class="relative">
+                            <input type="password" id="loginPassword" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent pr-12" placeholder="Enter password">
+                            <button type="button" id="togglePasswordVisibility" class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700">
+                                <i class="fas fa-eye"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <button type="button" id="passwordLoginBtn" class="w-full py-3 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 transition flex items-center justify-center">
+                        <span>Login</span>
+                        <div id="passwordLoginSpinner" class="loading-spinner ml-2 hidden"></div>
+                    </button>
+                    <div class="text-center">
+                        <button type="button" id="showRegisterBtn" class="text-green-600 hover:text-green-700 text-sm font-medium">
+                            Don't have an account? Register here
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Password Registration Section -->
+                <div id="passwordRegisterSection" class="space-y-4 hidden">
+                    <div class="text-center mb-4">
+                        <div class="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                            <i class="fas fa-user-plus text-2xl text-green-600"></i>
+                        </div>
+                        <h3 class="text-lg font-bold text-gray-800">Create Account</h3>
+                        <p class="text-sm text-gray-500">Register with ID and password</p>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Full Name <span class="text-red-500">*</span></label>
+                        <input type="text" id="regName" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent" placeholder="John Doe">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Email <span class="text-red-500">*</span></label>
+                        <input type="email" id="regEmail" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent" placeholder="your@email.com">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Password <span class="text-red-500">*</span></label>
+                        <input type="password" id="regPassword" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent" placeholder="Min 6 characters">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Phone Number</label>
+                        <input type="tel" id="regPhone" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent" placeholder="+1 234 567 8900">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">City</label>
+                        <input type="text" id="regCity" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent" placeholder="Your city">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Account Type <span class="text-red-500">*</span></label>
+                        <div class="space-y-2">
+                            <label class="flex items-center p-3 bg-green-50 rounded-lg cursor-pointer border-2 border-transparent has-[:checked]:border-green-500">
+                                <input type="radio" name="regUserRole" value="citizen" checked class="w-4 h-4 text-green-600 border-gray-300 focus:ring-green-500">
+                                <div class="ml-3">
+                                    <span class="font-medium text-gray-700">Citizen</span>
+                                    <p class="text-xs text-gray-500">Report plastic waste in your area</p>
+                                </div>
+                            </label>
+                            <label class="flex items-center p-3 bg-purple-50 rounded-lg cursor-pointer border-2 border-transparent has-[:checked]:border-purple-500">
+                                <input type="radio" name="regUserRole" value="municipality" class="w-4 h-4 text-purple-600 border-gray-300 focus:ring-purple-500">
+                                <div class="ml-3">
+                                    <span class="font-medium text-gray-700">Municipality Admin</span>
+                                    <p class="text-xs text-gray-500">For government/municipal officials</p>
+                                </div>
+                            </label>
+                            <label class="flex items-center p-3 bg-blue-50 rounded-lg cursor-pointer border-2 border-transparent has-[:checked]:border-blue-500">
+                                <input type="radio" name="regUserRole" value="recycler" class="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500">
+                                <div class="ml-3">
+                                    <span class="font-medium text-gray-700">Recycling Plant</span>
+                                    <p class="text-xs text-gray-500">Buy collected plastic waste</p>
+                                </div>
+                            </label>
+                        </div>
+                    </div>
+                    <div id="regCompanyNameField" class="hidden">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Company Name <span class="text-red-500">*</span></label>
+                        <input type="text" id="regCompanyName" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent" placeholder="Your recycling company name">
+                    </div>
+                    <button type="button" id="registerBtn" class="w-full py-3 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 transition flex items-center justify-center">
+                        <span>Create Account</span>
+                        <div id="registerSpinner" class="loading-spinner ml-2 hidden"></div>
+                    </button>
+                    <div class="text-center">
+                        <button type="button" id="showLoginBtn" class="text-green-600 hover:text-green-700 text-sm font-medium">
+                            Already have an account? Login here
+                        </button>
+                    </div>
+                </div>
+
+                <div class="mt-6 text-center text-sm text-gray-500">
+                    <p><i class="fas fa-lock mr-1"></i>Secure Authentication</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Dashboard -->
+        <div id="mainDashboard" class="hidden">
+            <!-- Mobile Navigation -->
+            <nav class="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-50 md:hidden">
+                <div class="flex justify-around py-2">
+                    <button class="nav-item flex flex-col items-center p-2 rounded-lg active" data-page="home">
+                        <i class="fas fa-home text-xl"></i>
+                        <span class="text-xs mt-1">Home</span>
+                    </button>
+                    <button class="nav-item flex flex-col items-center p-2 rounded-lg" data-page="report">
+                        <i class="fas fa-camera text-xl"></i>
+                        <span class="text-xs mt-1">Report</span>
+                    </button>
+                    <button class="nav-item flex flex-col items-center p-2 rounded-lg" data-page="myreports">
+                        <i class="fas fa-list text-xl"></i>
+                        <span class="text-xs mt-1">My Reports</span>
+                    </button>
+                    <button class="nav-item flex flex-col items-center p-2 rounded-lg citizen-only" data-page="shop">
+                        <i class="fas fa-shopping-bag text-xl"></i>
+                        <span class="text-xs mt-1">Shop</span>
+                    </button>
+                    <button class="nav-item flex flex-col items-center p-2 rounded-lg admin-only hidden" data-page="admin">
+                        <i class="fas fa-shield-alt text-xl"></i>
+                        <span class="text-xs mt-1">Admin</span>
+                    </button>
+                    <button class="nav-item flex flex-col items-center p-2 rounded-lg recycler-only hidden" data-page="marketplace">
+                        <i class="fas fa-store text-xl"></i>
+                        <span class="text-xs mt-1">Buy</span>
+                    </button>
+                    <button class="nav-item flex flex-col items-center p-2 rounded-lg recycler-only hidden" data-page="orders">
+                        <i class="fas fa-shopping-cart text-xl"></i>
+                        <span class="text-xs mt-1">Orders</span>
+                    </button>
+                    <button class="nav-item flex flex-col items-center p-2 rounded-lg" data-page="profile">
+                        <i class="fas fa-user text-xl"></i>
+                        <span class="text-xs mt-1">Profile</span>
+                    </button>
+                </div>
+            </nav>
+
+            <!-- Desktop Sidebar -->
+            <aside class="hidden md:flex fixed left-0 top-0 h-full w-64 bg-white border-r border-gray-200 flex-col z-40">
+                <div class="p-6 border-b border-gray-200">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
+                            <i class="fas fa-recycle text-xl text-green-600"></i>
+                        </div>
+                        <span class="text-xl font-bold text-gray-800">EcoReport</span>
+                    </div>
+                </div>
+                <nav class="flex-1 p-4 space-y-2">
+                    <button class="nav-item w-full flex items-center gap-3 p-3 rounded-lg active" data-page="home">
+                        <i class="fas fa-home w-5"></i>
+                        <span>Dashboard</span>
+                    </button>
+                    <button class="nav-item w-full flex items-center gap-3 p-3 rounded-lg" data-page="report">
+                        <i class="fas fa-camera w-5"></i>
+                        <span>Report Waste</span>
+                    </button>
+                    <button class="nav-item w-full flex items-center gap-3 p-3 rounded-lg" data-page="myreports">
+                        <i class="fas fa-list w-5"></i>
+                        <span>My Reports</span>
+                    </button>
+                    <button class="nav-item w-full flex items-center gap-3 p-3 rounded-lg citizen-only" data-page="shop">
+                        <i class="fas fa-shopping-bag w-5"></i>
+                        <span>Eco Shop</span>
+                    </button>
+                    <button class="nav-item w-full flex items-center gap-3 p-3 rounded-lg admin-only hidden" data-page="admin">
+                        <i class="fas fa-shield-alt w-5"></i>
+                        <span>Admin Panel</span>
+                    </button>
+                    <button class="nav-item w-full flex items-center gap-3 p-3 rounded-lg recycler-only hidden" data-page="marketplace">
+                        <i class="fas fa-store w-5"></i>
+                        <span>Marketplace</span>
+                    </button>
+                    <button class="nav-item w-full flex items-center gap-3 p-3 rounded-lg recycler-only hidden" data-page="orders">
+                        <i class="fas fa-shopping-cart w-5"></i>
+                        <span>My Orders</span>
+                    </button>
+                    <button class="nav-item w-full flex items-center gap-3 p-3 rounded-lg" data-page="profile">
+                        <i class="fas fa-user w-5"></i>
+                        <span>Profile</span>
+                    </button>
+                </nav>
+                <div class="p-4 border-t border-gray-200">
+                    <button id="logoutBtnDesktop" class="w-full flex items-center gap-3 p-3 rounded-lg text-red-600 hover:bg-red-50">
+                        <i class="fas fa-sign-out-alt w-5"></i>
+                        <span>Logout</span>
+                    </button>
+                </div>
+            </aside>
+
+            <!-- Main Content -->
+            <main class="md:ml-64 pb-20 md:pb-0">
+                <!-- Home Page -->
+                <div id="homePage" class="page p-4 md:p-8">
+                    <div class="mb-8">
+                        <h1 class="text-2xl md:text-3xl font-bold text-gray-800">Welcome back, <span id="userName">User</span>!</h1>
+                        <p class="text-gray-500 mt-1">Help keep our environment clean</p>
+                    </div>
+
+                    <!-- Stats Cards -->
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+                        <div class="bg-white rounded-xl p-4 shadow-sm">
+                            <div class="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center mb-3">
+                                <i class="fas fa-file-alt text-blue-600"></i>
+                            </div>
+                            <p class="text-2xl font-bold text-gray-800" id="totalReports">0</p>
+                            <p class="text-sm text-gray-500">Total Reports</p>
+                        </div>
+                        <div class="bg-white rounded-xl p-4 shadow-sm">
+                            <div class="w-10 h-10 bg-yellow-100 rounded-lg flex items-center justify-center mb-3">
+                                <i class="fas fa-clock text-yellow-600"></i>
+                            </div>
+                            <p class="text-2xl font-bold text-gray-800" id="pendingReports">0</p>
+                            <p class="text-sm text-gray-500">Pending</p>
+                        </div>
+                        <div class="bg-white rounded-xl p-4 shadow-sm">
+                            <div class="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center mb-3">
+                                <i class="fas fa-check-circle text-green-600"></i>
+                            </div>
+                            <p class="text-2xl font-bold text-gray-800" id="collectedReports">0</p>
+                            <p class="text-sm text-gray-500">Collected</p>
+                        </div>
+                        <div class="bg-white rounded-xl p-4 shadow-sm">
+                            <div class="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center mb-3">
+                                <i class="fas fa-star text-purple-600"></i>
+                            </div>
+                            <p class="text-2xl font-bold text-gray-800" id="userPoints">0</p>
+                            <p class="text-sm text-gray-500">Points Earned</p>
+                        </div>
+                    </div>
+
+                    <!-- Quick Action -->
+                    <div class="bg-gradient-to-r from-green-500 to-green-600 rounded-2xl p-6 text-white mb-8">
+                        <h2 class="text-xl font-bold mb-2">Report Plastic Waste</h2>
+                        <p class="opacity-90 mb-4">Spotted plastic waste? Take a photo and report it instantly.</p>
+                        <button id="quickReportBtn" class="bg-white text-green-600 px-6 py-3 rounded-lg font-semibold hover:bg-green-50 transition">
+                            <i class="fas fa-camera mr-2"></i>Open Camera
+                        </button>
+                    </div>
+
+                    <!-- Recent Activity -->
+                    <div class="bg-white rounded-xl shadow-sm p-6">
+                        <h3 class="text-lg font-bold text-gray-800 mb-4">Recent Activity</h3>
+                        <div id="recentActivity" class="space-y-4">
+                            <p class="text-gray-500 text-center py-4">No recent activity</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Report Page -->
+                <div id="reportPage" class="page p-4 md:p-8 hidden">
+                    <h1 class="text-2xl md:text-3xl font-bold text-gray-800 mb-6">Report Plastic Waste</h1>
+
+                    <form id="reportForm" class="bg-white rounded-xl shadow-sm p-6 space-y-6">
+                        <!-- Photo Section -->
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Photo <span class="text-red-500">*</span></label>
+                            <div id="photoSection" class="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center">
+                                <div id="noPhotoState">
+                                    <div class="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                                        <i class="fas fa-camera text-2xl text-green-600"></i>
+                                    </div>
+                                    <p class="text-gray-600 mb-4">Capture a photo of the plastic waste</p>
+                                    <div class="flex flex-col sm:flex-row gap-3 justify-center">
+                                        <button type="button" id="openCameraBtn" class="px-6 py-3 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 transition">
+                                            <i class="fas fa-camera mr-2"></i>Open Camera
+                                        </button>
+                                        <label class="px-6 py-3 bg-gray-100 text-gray-700 rounded-lg font-semibold hover:bg-gray-200 transition cursor-pointer">
+                                            <i class="fas fa-upload mr-2"></i>Upload Image
+                                            <input type="file" id="fileInput" accept="image/*" class="hidden">
+                                        </label>
+                                    </div>
+                                </div>
+                                <div id="photoPreviewState" class="hidden">
+                                    <img id="reportPhotoPreview" class="max-h-64 rounded-lg mx-auto mb-4" src="" alt="Preview">
+                                    <button type="button" id="changePhotoBtn" class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg font-semibold hover:bg-gray-200 transition">
+                                        <i class="fas fa-sync-alt mr-2"></i>Change Photo
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Plastic Type -->
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Plastic Type <span class="text-red-500">*</span></label>
+                            <select id="plasticType" required class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent">
+                                <option value="">Select type...</option>
+                                <option value="pet">PET Bottles</option>
+                                <option value="hdpe">HDPE Containers</option>
+                                <option value="pvc">PVC Items</option>
+                                <option value="ldpe">LDPE Bags/Films</option>
+                                <option value="pp">Polypropylene</option>
+                                <option value="ps">Polystyrene/Styrofoam</option>
+                                <option value="mixed">Mixed Plastics</option>
+                                <option value="other">Other</option>
+                            </select>
+                        </div>
+
+                        <!-- Quantity -->
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Approximate Quantity <span class="text-red-500">*</span></label>
+                            <div class="grid grid-cols-3 gap-3">
+                                <label class="relative">
+                                    <input type="radio" name="quantity" value="small" required class="peer sr-only">
+                                    <div class="p-4 border-2 rounded-lg text-center cursor-pointer peer-checked:border-green-500 peer-checked:bg-green-50 hover:border-gray-400 transition">
+                                        <i class="fas fa-box text-xl text-gray-400 peer-checked:text-green-600 mb-2"></i>
+                                        <p class="font-medium">Small</p>
+                                        <p class="text-xs text-gray-500">&lt; 1 kg</p>
+                                    </div>
+                                </label>
+                                <label class="relative">
+                                    <input type="radio" name="quantity" value="medium" class="peer sr-only">
+                                    <div class="p-4 border-2 rounded-lg text-center cursor-pointer peer-checked:border-green-500 peer-checked:bg-green-50 hover:border-gray-400 transition">
+                                        <i class="fas fa-boxes text-xl text-gray-400 mb-2"></i>
+                                        <p class="font-medium">Medium</p>
+                                        <p class="text-xs text-gray-500">1-5 kg</p>
+                                    </div>
+                                </label>
+                                <label class="relative">
+                                    <input type="radio" name="quantity" value="large" class="peer sr-only">
+                                    <div class="p-4 border-2 rounded-lg text-center cursor-pointer peer-checked:border-green-500 peer-checked:bg-green-50 hover:border-gray-400 transition">
+                                        <i class="fas fa-dumpster text-xl text-gray-400 mb-2"></i>
+                                        <p class="font-medium">Large</p>
+                                        <p class="text-xs text-gray-500">&gt; 5 kg</p>
+                                    </div>
+                                </label>
+                            </div>
+                        </div>
+
+                        <!-- City -->
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">City <span class="text-red-500">*</span></label>
+                            <input type="text" id="city" required class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent" placeholder="Enter city name">
+                        </div>
+
+                        <!-- Location Description -->
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Location Description <span class="text-red-500">*</span></label>
+                            <textarea id="locationDesc" required rows="3" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent" placeholder="Describe the exact location (e.g., Near the bus stop on Main Street)"></textarea>
+                        </div>
+
+                        <!-- Notes -->
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Additional Notes (Optional)</label>
+                            <textarea id="notes" rows="2" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent" placeholder="Any additional information..."></textarea>
+                        </div>
+
+                        <!-- Submit Button -->
+                        <button type="submit" id="submitReportBtn" class="w-full py-4 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 transition flex items-center justify-center">
+                            <span>Submit Report</span>
+                            <div id="submitSpinner" class="loading-spinner ml-2 hidden"></div>
+                        </button>
+                    </form>
+                </div>
+
+                <!-- My Reports Page -->
+                <div id="myreportsPage" class="page p-4 md:p-8 hidden">
+                    <h1 class="text-2xl md:text-3xl font-bold text-gray-800 mb-6">My Reports</h1>
+
+                    <div id="myReportsList" class="space-y-4">
+                        <div class="text-center py-12">
+                            <div class="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                                <i class="fas fa-file-alt text-2xl text-gray-400"></i>
+                            </div>
+                            <p class="text-gray-500">No reports yet</p>
+                            <p class="text-sm text-gray-400 mt-1">Start by reporting plastic waste in your area</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Eco Shop Page (Citizens Only) -->
+                <div id="shopPage" class="page p-4 md:p-8 hidden">
+                    <div class="mb-6">
+                        <h1 class="text-2xl md:text-3xl font-bold text-gray-800">🌿 Eco-Friendly Shop</h1>
+                        <p class="text-gray-500 mt-1">Products made from recycled plastic at affordable prices</p>
+                    </div>
+
+                    <!-- Shop Banner -->
+                    <div class="bg-gradient-to-r from-green-500 to-teal-500 rounded-2xl p-6 text-white mb-6">
+                        <div class="flex items-center gap-4">
+                            <div class="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center">
+                                <i class="fas fa-leaf text-3xl"></i>
+                            </div>
+                            <div>
+                                <h2 class="text-xl font-bold">Use Your Points!</h2>
+                                <p class="opacity-90">You have <span id="shopUserPoints" class="font-bold">0</span> points. Redeem them for discounts!</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Product Categories -->
+                    <div class="flex gap-2 mb-6 overflow-x-auto pb-2">
+                        <button class="shop-category-btn px-4 py-2 bg-green-600 text-white rounded-full text-sm font-medium whitespace-nowrap" data-category="all">All Products</button>
+                        <button class="shop-category-btn px-4 py-2 bg-gray-200 text-gray-700 rounded-full text-sm font-medium whitespace-nowrap" data-category="bags">Bags</button>
+                        <button class="shop-category-btn px-4 py-2 bg-gray-200 text-gray-700 rounded-full text-sm font-medium whitespace-nowrap" data-category="home">Home & Garden</button>
+                        <button class="shop-category-btn px-4 py-2 bg-gray-200 text-gray-700 rounded-full text-sm font-medium whitespace-nowrap" data-category="stationery">Stationery</button>
+                        <button class="shop-category-btn px-4 py-2 bg-gray-200 text-gray-700 rounded-full text-sm font-medium whitespace-nowrap" data-category="accessories">Accessories</button>
+                    </div>
+
+                    <!-- Products Grid -->
+                    <div id="shopProductsGrid" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                        <!-- Products will be loaded here -->
+                    </div>
+
+                    <!-- Shopping Cart -->
+                    <div id="cartFloatingBtn" class="fixed bottom-24 right-4 md:bottom-8 z-40 hidden">
+                        <button onclick="openCart()" class="w-14 h-14 bg-green-600 text-white rounded-full shadow-lg flex items-center justify-center hover:bg-green-700 transition">
+                            <i class="fas fa-shopping-cart text-xl"></i>
+                            <span id="cartBadge" class="absolute -top-1 -right-1 w-6 h-6 bg-red-500 text-white text-xs rounded-full flex items-center justify-center font-bold">0</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Cart Modal -->
+                <div id="cartModal" class="modal">
+                    <div class="bg-white rounded-2xl shadow-xl w-full max-w-md m-4 max-h-[80vh] overflow-hidden flex flex-col">
+                        <div class="flex items-center justify-between p-4 border-b">
+                            <h3 class="text-xl font-bold text-gray-800"><i class="fas fa-shopping-cart mr-2 text-green-600"></i>Your Cart</h3>
+                            <button onclick="closeCart()" class="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center hover:bg-gray-200">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </div>
+                        <div id="cartItems" class="flex-1 overflow-y-auto p-4">
+                            <p class="text-center text-gray-500 py-8">Your cart is empty</p>
+                        </div>
+                        <div class="border-t p-4 bg-gray-50">
+                            <div class="flex justify-between items-center mb-4">
+                                <span class="font-medium text-gray-700">Total:</span>
+                                <span id="cartTotal" class="text-xl font-bold text-green-600">₹0</span>
+                            </div>
+                            <button id="checkoutBtn" onclick="checkout()" class="w-full py-3 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 transition disabled:bg-gray-300 disabled:cursor-not-allowed" disabled>
+                                <i class="fas fa-check mr-2"></i>Place Order
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- My Orders Section in Shop -->
+                <div id="myOrdersSection" class="hidden">
+                    <h2 class="text-xl font-bold text-gray-800 mb-4 mt-8">📦 My Orders</h2>
+                    <div id="myShopOrders" class="space-y-3">
+                        <!-- Orders will be loaded here -->
+                    </div>
+                </div>
+
+                <!-- Admin Page -->
+                <div id="adminPage" class="page p-4 md:p-8 hidden">
+                    <div class="flex flex-col md:flex-row md:items-center md:justify-between mb-6">
+                        <h1 class="text-2xl md:text-3xl font-bold text-gray-800 mb-4 md:mb-0">Admin Dashboard</h1>
+                        <button id="exportCsvBtn" class="px-4 py-2 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 transition">
+                            <i class="fas fa-download mr-2"></i>Export CSV
+                        </button>
+                    </div>
+
+                    <!-- Filters -->
+                    <div class="bg-white rounded-xl shadow-sm p-4 mb-6">
+                        <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Filter by City</label>
+                                <select id="filterCity" class="w-full px-3 py-2 border border-gray-300 rounded-lg">
+                                    <option value="">All Cities</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Filter by Status</label>
+                                <select id="filterStatus" class="w-full px-3 py-2 border border-gray-300 rounded-lg">
+                                    <option value="">All Statuses</option>
+                                    <option value="submitted">Submitted</option>
+                                    <option value="verified">Verified</option>
+                                    <option value="collected">Collected</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">From Date</label>
+                                <input type="date" id="filterDateFrom" class="w-full px-3 py-2 border border-gray-300 rounded-lg">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">To Date</label>
+                                <input type="date" id="filterDateTo" class="w-full px-3 py-2 border border-gray-300 rounded-lg">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Admin Stats -->
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                        <div class="bg-white rounded-xl p-4 shadow-sm">
+                            <p class="text-2xl font-bold text-gray-800" id="adminTotalReports">0</p>
+                            <p class="text-sm text-gray-500">Total Reports</p>
+                        </div>
+                        <div class="bg-white rounded-xl p-4 shadow-sm">
+                            <p class="text-2xl font-bold text-yellow-600" id="adminSubmitted">0</p>
+                            <p class="text-sm text-gray-500">Submitted</p>
+                        </div>
+                        <div class="bg-white rounded-xl p-4 shadow-sm">
+                            <p class="text-2xl font-bold text-blue-600" id="adminVerified">0</p>
+                            <p class="text-sm text-gray-500">Verified</p>
+                        </div>
+                        <div class="bg-white rounded-xl p-4 shadow-sm">
+                            <p class="text-2xl font-bold text-green-600" id="adminCollected">0</p>
+                            <p class="text-sm text-gray-500">Collected</p>
+                        </div>
+                    </div>
+
+                    <!-- All Reports -->
+                    <div class="bg-white rounded-xl shadow-sm overflow-hidden">
+                        <div class="overflow-x-auto">
+                            <table class="w-full">
+                                <thead class="bg-gray-50">
+                                    <tr>
+                                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Photo</th>
+                                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Details</th>
+                                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Location</th>
+                                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="adminReportsTable" class="divide-y divide-gray-200">
+                                    <tr>
+                                        <td colspan="5" class="px-4 py-8 text-center text-gray-500">No reports found</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Marketplace Page (Recycling Plants) -->
+                <div id="marketplacePage" class="page p-4 md:p-8 hidden">
+                    <div class="flex flex-col md:flex-row md:items-center md:justify-between mb-6">
+                        <div>
+                            <h1 class="text-2xl md:text-3xl font-bold text-gray-800">Plastic Waste Marketplace</h1>
+                            <p class="text-gray-500 mt-1">Browse and purchase collected plastic waste from municipalities</p>
+                        </div>
+                    </div>
+
+                    <!-- Marketplace Filters -->
+                    <div class="bg-white rounded-xl shadow-sm p-4 mb-6">
+                        <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Plastic Type</label>
+                                <select id="marketFilterType" class="w-full px-3 py-2 border border-gray-300 rounded-lg">
+                                    <option value="">All Types</option>
+                                    <option value="pet">PET Bottles</option>
+                                    <option value="hdpe">HDPE Containers</option>
+                                    <option value="pvc">PVC Items</option>
+                                    <option value="ldpe">LDPE Bags/Films</option>
+                                    <option value="pp">Polypropylene</option>
+                                    <option value="ps">Polystyrene/Styrofoam</option>
+                                    <option value="mixed">Mixed Plastics</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">City</label>
+                                <select id="marketFilterCity" class="w-full px-3 py-2 border border-gray-300 rounded-lg">
+                                    <option value="">All Cities</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Quantity</label>
+                                <select id="marketFilterQuantity" class="w-full px-3 py-2 border border-gray-300 rounded-lg">
+                                    <option value="">All Sizes</option>
+                                    <option value="small">Small (&lt; 1 kg)</option>
+                                    <option value="medium">Medium (1-5 kg)</option>
+                                    <option value="large">Large (&gt; 5 kg)</option>
+                                </select>
+                            </div>
+                            <div class="flex items-end">
+                                <button id="applyMarketFilters" class="w-full px-4 py-2 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition">
+                                    <i class="fas fa-search mr-2"></i>Search
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Available Stats -->
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                        <div class="bg-white rounded-xl p-4 shadow-sm">
+                            <div class="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center mb-3">
+                                <i class="fas fa-box text-green-600"></i>
+                            </div>
+                            <p class="text-2xl font-bold text-gray-800" id="availableLots">0</p>
+                            <p class="text-sm text-gray-500">Available Lots</p>
+                        </div>
+                        <div class="bg-white rounded-xl p-4 shadow-sm">
+                            <div class="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center mb-3">
+                                <i class="fas fa-weight text-blue-600"></i>
+                            </div>
+                            <p class="text-2xl font-bold text-gray-800" id="totalWeight">0 kg</p>
+                            <p class="text-sm text-gray-500">Est. Total Weight</p>
+                        </div>
+                        <div class="bg-white rounded-xl p-4 shadow-sm">
+                            <div class="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center mb-3">
+                                <i class="fas fa-city text-purple-600"></i>
+                            </div>
+                            <p class="text-2xl font-bold text-gray-800" id="citiesAvailable">0</p>
+                            <p class="text-sm text-gray-500">Cities</p>
+                        </div>
+                        <div class="bg-white rounded-xl p-4 shadow-sm">
+                            <div class="w-10 h-10 bg-yellow-100 rounded-lg flex items-center justify-center mb-3">
+                                <i class="fas fa-shopping-bag text-yellow-600"></i>
+                            </div>
+                            <p class="text-2xl font-bold text-gray-800" id="myPurchases">0</p>
+                            <p class="text-sm text-gray-500">My Purchases</p>
+                        </div>
+                    </div>
+
+                    <!-- Available Waste Listings -->
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" id="marketplaceListings">
+                        <div class="col-span-full text-center py-12">
+                            <div class="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                                <i class="fas fa-box-open text-2xl text-gray-400"></i>
+                            </div>
+                            <p class="text-gray-500">No collected waste available for purchase</p>
+                            <p class="text-sm text-gray-400 mt-1">Check back later for new listings</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Orders Page (Recycling Plants) -->
+                <div id="ordersPage" class="page p-4 md:p-8 hidden">
+                    <h1 class="text-2xl md:text-3xl font-bold text-gray-800 mb-6">My Purchase Orders</h1>
+
+                    <!-- Order Stats -->
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                        <div class="bg-white rounded-xl p-4 shadow-sm">
+                            <p class="text-2xl font-bold text-gray-800" id="totalOrders">0</p>
+                            <p class="text-sm text-gray-500">Total Orders</p>
+                        </div>
+                        <div class="bg-white rounded-xl p-4 shadow-sm">
+                            <p class="text-2xl font-bold text-yellow-600" id="pendingOrders">0</p>
+                            <p class="text-sm text-gray-500">Pending</p>
+                        </div>
+                        <div class="bg-white rounded-xl p-4 shadow-sm">
+                            <p class="text-2xl font-bold text-blue-600" id="confirmedOrders">0</p>
+                            <p class="text-sm text-gray-500">Confirmed</p>
+                        </div>
+                        <div class="bg-white rounded-xl p-4 shadow-sm">
+                            <p class="text-2xl font-bold text-green-600" id="deliveredOrders">0</p>
+                            <p class="text-sm text-gray-500">Delivered</p>
+                        </div>
+                    </div>
+
+                    <!-- Orders List -->
+                    <div id="ordersList" class="space-y-4">
+                        <div class="text-center py-12">
+                            <div class="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                                <i class="fas fa-shopping-cart text-2xl text-gray-400"></i>
+                            </div>
+                            <p class="text-gray-500">No orders yet</p>
+                            <p class="text-sm text-gray-400 mt-1">Browse the marketplace to purchase plastic waste</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Purchase Modal -->
+                <div id="purchaseModal" class="modal">
+                    <div class="bg-white rounded-2xl shadow-xl p-6 w-full max-w-md m-4">
+                        <div class="flex items-center justify-between mb-4">
+                            <h3 class="text-xl font-bold text-gray-800">Purchase Request</h3>
+                            <button id="closePurchaseModal" class="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center hover:bg-gray-200">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </div>
+                        <div id="purchaseDetails" class="mb-4">
+                            <!-- Filled dynamically -->
+                        </div>
+                        <div class="space-y-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Offered Price (₹)</label>
+                                <input type="number" id="offerPrice" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" placeholder="Enter your offer">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Pickup Notes</label>
+                                <textarea id="pickupNotes" rows="2" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" placeholder="Any specific instructions for pickup..."></textarea>
+                            </div>
+                            <button id="confirmPurchaseBtn" class="w-full py-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition flex items-center justify-center">
+                                <i class="fas fa-shopping-cart mr-2"></i>
+                                <span>Submit Purchase Request</span>
+                                <div id="purchaseSpinner" class="loading-spinner ml-2 hidden"></div>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Profile Page -->
+                <div id="profilePage" class="page p-4 md:p-8 hidden">
+                    <h1 class="text-2xl md:text-3xl font-bold text-gray-800 mb-6">Profile</h1>
+
+                    <div class="bg-white rounded-xl shadow-sm p-6 mb-6">
+                        <div class="flex items-center gap-4 mb-6">
+                            <div class="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center">
+                                <i class="fas fa-user text-3xl text-green-600"></i>
+                            </div>
+                            <div>
+                                <h2 class="text-xl font-bold text-gray-800" id="profileName">User Name</h2>
+                                <p class="text-gray-500" id="profileEmail">user@email.com</p>
+                                <span id="profileBadge" class="inline-block mt-1 px-3 py-1 bg-green-100 text-green-700 text-sm rounded-full font-medium">User</span>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                            <div class="text-center p-4 bg-gray-50 rounded-lg">
+                                <p class="text-2xl font-bold text-gray-800" id="profileReports">0</p>
+                                <p class="text-sm text-gray-500">Reports</p>
+                            </div>
+                            <div class="text-center p-4 bg-gray-50 rounded-lg">
+                                <p class="text-2xl font-bold text-green-600" id="profilePoints">0</p>
+                                <p class="text-sm text-gray-500">Points</p>
+                            </div>
+                            <div class="text-center p-4 bg-gray-50 rounded-lg">
+                                <p class="text-2xl font-bold text-blue-600" id="profileVerified">0</p>
+                                <p class="text-sm text-gray-500">Verified</p>
+                            </div>
+                            <div class="text-center p-4 bg-gray-50 rounded-lg">
+                                <p class="text-2xl font-bold text-purple-600" id="profileCollected">0</p>
+                                <p class="text-sm text-gray-500">Collected</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="bg-white rounded-xl shadow-sm p-6">
+                        <h3 class="text-lg font-bold text-gray-800 mb-4">Account Settings</h3>
+                        <div class="space-y-4">
+                            <button id="logoutBtn" class="w-full py-3 bg-red-50 text-red-600 rounded-lg font-semibold hover:bg-red-100 transition">
+                                <i class="fas fa-sign-out-alt mr-2"></i>Logout
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <script>
+        // ==================== CONFIGURATION ====================
+        // Firebase Configuration - Replace with your own config
+        const firebaseConfig = {
+            apiKey: "demo-mode",
+            authDomain: "demo-mode",
+            projectId: "demo-mode",
+            storageBucket: "demo-mode",
+            messagingSenderId: "demo-mode",
+            appId: "demo-mode"
+        };
+
+        // Demo mode flag - set to false when using real Firebase
+        const DEMO_MODE = true;
+
+        // ==================== APP STATE ====================
+        let currentUser = null;
+        let capturedPhotoData = null;
+        let cameraStream = null;
+        let facingMode = 'environment';
+        let allReports = [];
+
+        // ==================== DEMO DATA STORAGE ====================
+        const DemoStorage = {
+            getUsers() {
+                return JSON.parse(localStorage.getItem('eco_users') || '[]');
+            },
+            saveUsers(users) {
+                localStorage.setItem('eco_users', JSON.stringify(users));
+            },
+            getReports() {
+                return JSON.parse(localStorage.getItem('eco_reports') || '[]');
+            },
+            saveReports(reports) {
+                localStorage.setItem('eco_reports', JSON.stringify(reports));
+            },
+            getCurrentUser() {
+                return JSON.parse(localStorage.getItem('eco_current_user') || 'null');
+            },
+            saveCurrentUser(user) {
+                localStorage.setItem('eco_current_user', JSON.stringify(user));
+            },
+            clearCurrentUser() {
+                localStorage.removeItem('eco_current_user');
+            },
+            // OTP Storage
+            saveOtp(email, code, expiry) {
+                const otps = JSON.parse(localStorage.getItem('eco_otps') || '{}');
+                otps[email] = { code, expiry };
+                localStorage.setItem('eco_otps', JSON.stringify(otps));
+            },
+            getOtp(email) {
+                const otps = JSON.parse(localStorage.getItem('eco_otps') || '{}');
+                return otps[email] || null;
+            },
+            clearOtp(email) {
+                const otps = JSON.parse(localStorage.getItem('eco_otps') || '{}');
+                delete otps[email];
+                localStorage.setItem('eco_otps', JSON.stringify(otps));
+            },
+            // Orders Storage
+            getOrders() {
+                return JSON.parse(localStorage.getItem('eco_orders') || '[]');
+            },
+            saveOrders(orders) {
+                localStorage.setItem('eco_orders', JSON.stringify(orders));
+            }
+        };
+
+        // ==================== INITIALIZATION ====================
+        document.addEventListener('DOMContentLoaded', () => {
+            initializeApp();
+        });
+
+        function initializeApp() {
+            // Check for existing session
+            const savedUser = DemoStorage.getCurrentUser();
+            if (savedUser) {
+                currentUser = savedUser;
+                showDashboard();
+            } else {
+                // Show email step by default
+                showAuthStep('email');
+            }
+
+            // Setup event listeners
+            setupAuthListeners();
+            setupNavigationListeners();
+            setupCameraListeners();
+            setupReportFormListeners();
+            setupAdminListeners();
+            setupMarketplaceListeners();
+            setupRoleToggle();
+        }
+
+        // ==================== AUTH FUNCTIONS ====================
+        let authEmail = '';
+        let generatedOtp = '';
+        let otpExpiry = null;
+        let resendTimerInterval = null;
+        let isNewUser = false;
+
+        function setupAuthListeners() {
+            // Send OTP button
+            document.getElementById('sendOtpBtn').addEventListener('click', sendOtp);
+            
+            // Verify OTP button
+            document.getElementById('verifyOtpBtn').addEventListener('click', verifyOtp);
+            
+            // Back to email button
+            document.getElementById('backToEmailBtn').addEventListener('click', () => {
+                showAuthStep('email');
+            });
+            
+            // Resend OTP button
+            document.getElementById('resendOtpBtn').addEventListener('click', () => {
+                if (!document.getElementById('resendOtpBtn').disabled) {
+                    sendOtp();
+                }
+            });
+            
+            // Complete profile button
+            document.getElementById('completeProfileBtn').addEventListener('click', completeProfile);
+            
+            // OTP input handling
+            setupOtpInputs();
+
+            // Logout
+            document.getElementById('logoutBtn').addEventListener('click', logout);
+            document.getElementById('logoutBtnDesktop').addEventListener('click', logout);
+            
+            // Enter key on email input
+            document.getElementById('authEmail').addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    sendOtp();
+                }
+            });
+        }
+
+        function setupOtpInputs() {
+            const otpInputs = document.querySelectorAll('.otp-input');
+            
+            otpInputs.forEach((input, index) => {
+                // Auto-focus next input on entry
+                input.addEventListener('input', (e) => {
+                    const value = e.target.value;
+                    if (value.length === 1 && index < otpInputs.length - 1) {
+                        otpInputs[index + 1].focus();
+                    }
+                    // Auto-verify when all digits entered
+                    if (index === otpInputs.length - 1 && value.length === 1) {
+                        verifyOtp();
+                    }
+                });
+                
+                // Handle backspace
+                input.addEventListener('keydown', (e) => {
+                    if (e.key === 'Backspace' && !e.target.value && index > 0) {
+                        otpInputs[index - 1].focus();
+                    }
+                });
+                
+                // Only allow numbers
+                input.addEventListener('keypress', (e) => {
+                    if (!/[0-9]/.test(e.key)) {
+                        e.preventDefault();
+                    }
+                });
+                
+                // Handle paste
+                input.addEventListener('paste', (e) => {
+                    e.preventDefault();
+                    const pastedData = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 6);
+                    pastedData.split('').forEach((char, i) => {
+                        if (otpInputs[i]) {
+                            otpInputs[i].value = char;
+                        }
+                    });
+                    if (pastedData.length === 6) {
+                        verifyOtp();
+                    }
+                });
+            });
+        }
+
+        function showAuthStep(step) {
+            document.getElementById('emailStep').classList.add('hidden');
+            document.getElementById('otpStep').classList.add('hidden');
+            document.getElementById('profileStep').classList.add('hidden');
+            document.getElementById('passwordLoginSection').classList.add('hidden');
+            document.getElementById('passwordRegisterSection').classList.add('hidden');
+            
+            // Reset method buttons
+            document.getElementById('otpMethodBtn').classList.remove('bg-gray-200', 'text-gray-700');
+            document.getElementById('otpMethodBtn').classList.add('bg-green-600', 'text-white');
+            document.getElementById('passwordMethodBtn').classList.remove('bg-green-600', 'text-white');
+            document.getElementById('passwordMethodBtn').classList.add('bg-gray-200', 'text-gray-700');
+            
+            if (step === 'email') {
+                document.getElementById('emailStep').classList.remove('hidden');
+                clearInterval(resendTimerInterval);
+            } else if (step === 'otp') {
+                document.getElementById('otpStep').classList.remove('hidden');
+                document.getElementById('otpEmailDisplay').textContent = authEmail;
+                // Clear OTP inputs
+                document.querySelectorAll('.otp-input').forEach(input => input.value = '');
+                document.querySelectorAll('.otp-input')[0].focus();
+                startResendTimer();
+            } else if (step === 'profile') {
+                document.getElementById('profileStep').classList.remove('hidden');
+            } else if (step === 'passwordLogin') {
+                document.getElementById('passwordMethodBtn').classList.remove('bg-gray-200', 'text-gray-700');
+                document.getElementById('passwordMethodBtn').classList.add('bg-green-600', 'text-white');
+                document.getElementById('otpMethodBtn').classList.remove('bg-green-600', 'text-white');
+                document.getElementById('otpMethodBtn').classList.add('bg-gray-200', 'text-gray-700');
+                document.getElementById('passwordLoginSection').classList.remove('hidden');
+            } else if (step === 'passwordRegister') {
+                document.getElementById('passwordMethodBtn').classList.remove('bg-gray-200', 'text-gray-700');
+                document.getElementById('passwordMethodBtn').classList.add('bg-green-600', 'text-white');
+                document.getElementById('otpMethodBtn').classList.remove('bg-green-600', 'text-white');
+                document.getElementById('otpMethodBtn').classList.add('bg-gray-200', 'text-gray-700');
+                document.getElementById('passwordRegisterSection').classList.remove('hidden');
+            }
+        }
+
+        function startResendTimer() {
+            let seconds = 60;
+            const timerSpan = document.getElementById('resendTimer');
+            const resendBtn = document.getElementById('resendOtpBtn');
+            
+            resendBtn.disabled = true;
+            timerSpan.textContent = seconds;
+            
+            clearInterval(resendTimerInterval);
+            resendTimerInterval = setInterval(() => {
+                seconds--;
+                timerSpan.textContent = seconds;
+                
+                if (seconds <= 0) {
+                    clearInterval(resendTimerInterval);
+                    resendBtn.disabled = false;
+                    resendBtn.innerHTML = 'Resend OTP';
+                }
+            }, 1000);
+        }
+
+        function sendOtp() {
+            const email = document.getElementById('authEmail').value.trim();
+            
+            if (!email) {
+                showToast('Please enter your email address', 'error');
+                return;
+            }
+            
+            if (!isValidEmail(email)) {
+                showToast('Please enter a valid email address', 'error');
+                return;
+            }
+            
+            document.getElementById('sendOtpSpinner').classList.remove('hidden');
+            document.getElementById('sendOtpBtn').disabled = true;
+            
+            // Simulate API call
+            setTimeout(() => {
+                authEmail = email;
+                
+                // Generate 6-digit OTP
+                generatedOtp = Math.floor(100000 + Math.random() * 900000).toString();
+                otpExpiry = Date.now() + (5 * 60 * 1000); // 5 minutes
+                
+                // Store OTP in localStorage for demo
+                DemoStorage.saveOtp(email, generatedOtp, otpExpiry);
+                
+                // Check if user exists
+                const users = DemoStorage.getUsers();
+                isNewUser = !users.find(u => u.email === email);
+                
+                document.getElementById('sendOtpSpinner').classList.add('hidden');
+                document.getElementById('sendOtpBtn').disabled = false;
+                
+                showToast(`OTP sent to ${email}! (Demo: ${generatedOtp})`, 'success');
+                showAuthStep('otp');
+                
+                // In production, this would be sent via email
+                console.log(`OTP for ${email}: ${generatedOtp}`);
+            }, 1000);
+        }
+
+        function verifyOtp() {
+            const otpInputs = document.querySelectorAll('.otp-input');
+            const enteredOtp = Array.from(otpInputs).map(input => input.value).join('');
+            
+            if (enteredOtp.length !== 6) {
+                showToast('Please enter the complete 6-digit code', 'error');
+                return;
+            }
+            
+            document.getElementById('verifyOtpSpinner').classList.remove('hidden');
+            document.getElementById('verifyOtpBtn').disabled = true;
+            
+            setTimeout(() => {
+                // Verify OTP
+                const storedOtp = DemoStorage.getOtp(authEmail);
+                
+                if (!storedOtp || Date.now() > storedOtp.expiry) {
+                    showToast('OTP expired. Please request a new one.', 'error');
+                    document.getElementById('verifyOtpSpinner').classList.add('hidden');
+                    document.getElementById('verifyOtpBtn').disabled = false;
+                    return;
+                }
+                
+                if (enteredOtp !== storedOtp.code) {
+                    showToast('Invalid OTP. Please try again.', 'error');
+                    document.getElementById('verifyOtpSpinner').classList.add('hidden');
+                    document.getElementById('verifyOtpBtn').disabled = false;
+                    // Clear inputs
+                    otpInputs.forEach(input => input.value = '');
+                    otpInputs[0].focus();
+                    return;
+                }
+                
+                // OTP verified successfully
+                DemoStorage.clearOtp(authEmail);
+                
+                // Check if user exists
+                const users = DemoStorage.getUsers();
+                const existingUser = users.find(u => u.email === authEmail);
+                
+                document.getElementById('verifyOtpSpinner').classList.add('hidden');
+                document.getElementById('verifyOtpBtn').disabled = false;
+                
+                if (existingUser) {
+                    // Existing user - log them in
+                    currentUser = existingUser;
+                    DemoStorage.saveCurrentUser(existingUser);
+                    showToast('Login successful!', 'success');
+                    showDashboard();
+                } else {
+                    // New user - show profile completion
+                    showToast('Email verified! Please complete your profile.', 'success');
+                    showAuthStep('profile');
+                }
+            }, 1000);
+        }
+
+        function completeProfile() {
+            const name = document.getElementById('profileNameInput').value.trim();
+            const phone = document.getElementById('profilePhoneInput').value.trim();
+            const city = document.getElementById('profileCityInput').value.trim();
+            const selectedRole = document.querySelector('input[name="userRole"]:checked')?.value || 'citizen';
+            const companyName = document.getElementById('companyNameInput')?.value.trim() || '';
+            
+            if (!name) {
+                showToast('Please enter your name', 'error');
+                return;
+            }
+            
+            if (selectedRole === 'recycler' && !companyName) {
+                showToast('Please enter your company name', 'error');
+                return;
+            }
+            
+            document.getElementById('completeProfileSpinner').classList.remove('hidden');
+            document.getElementById('completeProfileBtn').disabled = true;
+            
+            setTimeout(() => {
+                const newUser = {
+                    id: 'user_' + Date.now(),
+                    name,
+                    email: authEmail,
+                    phone,
+                    city,
+                    companyName: selectedRole === 'recycler' ? companyName : '',
+                    isAdmin: selectedRole === 'municipality',
+                    isRecycler: selectedRole === 'recycler',
+                    role: selectedRole,
+                    points: 0,
+                    createdAt: new Date().toISOString()
+                };
+                
+                const users = DemoStorage.getUsers();
+                users.push(newUser);
+                DemoStorage.saveUsers(users);
+                
+                currentUser = newUser;
+                DemoStorage.saveCurrentUser(newUser);
+                
+                document.getElementById('completeProfileSpinner').classList.add('hidden');
+                document.getElementById('completeProfileBtn').disabled = false;
+                
+                showToast('Account created successfully!', 'success');
+                showDashboard();
+            }, 500);
+        }
+
+        function isValidEmail(email) {
+            return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+        }
+
+        // ==================== ROLE TOGGLE (Show/Hide Company Name) ====================
+        function setupRoleToggle() {
+            // For OTP profile step
+            const roleRadios = document.querySelectorAll('input[name="userRole"]');
+            roleRadios.forEach(radio => {
+                radio.addEventListener('change', (e) => {
+                    const companyField = document.getElementById('companyNameField');
+                    if (e.target.value === 'recycler') {
+                        companyField.classList.remove('hidden');
+                    } else {
+                        companyField.classList.add('hidden');
+                    }
+                });
+            });
+
+            // For password registration
+            const regRoleRadios = document.querySelectorAll('input[name="regUserRole"]');
+            regRoleRadios.forEach(radio => {
+                radio.addEventListener('change', (e) => {
+                    const companyField = document.getElementById('regCompanyNameField');
+                    if (e.target.value === 'recycler') {
+                        companyField.classList.remove('hidden');
+                    } else {
+                        companyField.classList.add('hidden');
+                    }
+                });
+            });
+
+            // Login method toggle
+            document.getElementById('otpMethodBtn').addEventListener('click', () => {
+                document.getElementById('otpMethodBtn').classList.remove('bg-gray-200', 'text-gray-700');
+                document.getElementById('otpMethodBtn').classList.add('bg-green-600', 'text-white');
+                document.getElementById('passwordMethodBtn').classList.remove('bg-green-600', 'text-white');
+                document.getElementById('passwordMethodBtn').classList.add('bg-gray-200', 'text-gray-700');
+                
+                document.getElementById('emailStep').classList.remove('hidden');
+                document.getElementById('passwordLoginSection').classList.add('hidden');
+                document.getElementById('passwordRegisterSection').classList.add('hidden');
+            });
+
+            document.getElementById('passwordMethodBtn').addEventListener('click', () => {
+                document.getElementById('passwordMethodBtn').classList.remove('bg-gray-200', 'text-gray-700');
+                document.getElementById('passwordMethodBtn').classList.add('bg-green-600', 'text-white');
+                document.getElementById('otpMethodBtn').classList.remove('bg-green-600', 'text-white');
+                document.getElementById('otpMethodBtn').classList.add('bg-gray-200', 'text-gray-700');
+                
+                document.getElementById('emailStep').classList.add('hidden');
+                document.getElementById('otpStep').classList.add('hidden');
+                document.getElementById('profileStep').classList.add('hidden');
+                document.getElementById('passwordLoginSection').classList.remove('hidden');
+                document.getElementById('passwordRegisterSection').classList.add('hidden');
+            });
+
+            // Show register/login toggle
+            document.getElementById('showRegisterBtn').addEventListener('click', () => {
+                document.getElementById('passwordLoginSection').classList.add('hidden');
+                document.getElementById('passwordRegisterSection').classList.remove('hidden');
+            });
+
+            document.getElementById('showLoginBtn').addEventListener('click', () => {
+                document.getElementById('passwordRegisterSection').classList.add('hidden');
+                document.getElementById('passwordLoginSection').classList.remove('hidden');
+            });
+
+            // Password visibility toggle
+            document.getElementById('togglePasswordVisibility').addEventListener('click', () => {
+                const passwordInput = document.getElementById('loginPassword');
+                const icon = document.getElementById('togglePasswordVisibility').querySelector('i');
+                if (passwordInput.type === 'password') {
+                    passwordInput.type = 'text';
+                    icon.classList.remove('fa-eye');
+                    icon.classList.add('fa-eye-slash');
+                } else {
+                    passwordInput.type = 'password';
+                    icon.classList.remove('fa-eye-slash');
+                    icon.classList.add('fa-eye');
+                }
+            });
+
+            // Password login button
+            document.getElementById('passwordLoginBtn').addEventListener('click', passwordLogin);
+
+            // Register button
+            document.getElementById('registerBtn').addEventListener('click', registerWithPassword);
+        }
+
+        function passwordLogin() {
+            const userId = document.getElementById('loginUserId').value.trim();
+            const password = document.getElementById('loginPassword').value;
+
+            if (!userId) {
+                showToast('Please enter your User ID or Email', 'error');
+                return;
+            }
+
+            if (!password) {
+                showToast('Please enter your password', 'error');
+                return;
+            }
+
+            document.getElementById('passwordLoginSpinner').classList.remove('hidden');
+            document.getElementById('passwordLoginBtn').disabled = true;
+
+            setTimeout(() => {
+                const users = DemoStorage.getUsers();
+                const user = users.find(u => (u.email === userId || u.id === userId) && u.password === password);
+
+                document.getElementById('passwordLoginSpinner').classList.add('hidden');
+                document.getElementById('passwordLoginBtn').disabled = false;
+
+                if (user) {
+                    currentUser = user;
+                    DemoStorage.saveCurrentUser(user);
+                    showToast('Login successful!', 'success');
+                    showDashboard();
+                } else {
+                    showToast('Invalid credentials. Please check your ID/Email and password.', 'error');
+                }
+            }, 500);
+        }
+
+        function registerWithPassword() {
+            const name = document.getElementById('regName').value.trim();
+            const email = document.getElementById('regEmail').value.trim();
+            const password = document.getElementById('regPassword').value;
+            const phone = document.getElementById('regPhone').value.trim();
+            const city = document.getElementById('regCity').value.trim();
+            const selectedRole = document.querySelector('input[name="regUserRole"]:checked')?.value || 'citizen';
+            const companyName = document.getElementById('regCompanyName')?.value.trim() || '';
+
+            if (!name) {
+                showToast('Please enter your name', 'error');
+                return;
+            }
+
+            if (!email || !isValidEmail(email)) {
+                showToast('Please enter a valid email address', 'error');
+                return;
+            }
+
+            if (!password || password.length < 6) {
+                showToast('Password must be at least 6 characters', 'error');
+                return;
+            }
+
+            if (selectedRole === 'recycler' && !companyName) {
+                showToast('Please enter your company name', 'error');
+                return;
+            }
+
+            // Check if email already exists
+            const users = DemoStorage.getUsers();
+            if (users.find(u => u.email === email)) {
+                showToast('An account with this email already exists', 'error');
+                return;
+            }
+
+            document.getElementById('registerSpinner').classList.remove('hidden');
+            document.getElementById('registerBtn').disabled = true;
+
+            setTimeout(() => {
+                const newUser = {
+                    id: 'user_' + Date.now(),
+                    name,
+                    email,
+                    password, // In production, this should be hashed
+                    phone,
+                    city,
+                    companyName: selectedRole === 'recycler' ? companyName : '',
+                    isAdmin: selectedRole === 'municipality',
+                    isRecycler: selectedRole === 'recycler',
+                    role: selectedRole,
+                    points: 0,
+                    createdAt: new Date().toISOString()
+                };
+
+                users.push(newUser);
+                DemoStorage.saveUsers(users);
+
+                currentUser = newUser;
+                DemoStorage.saveCurrentUser(newUser);
+
+                document.getElementById('registerSpinner').classList.add('hidden');
+                document.getElementById('registerBtn').disabled = false;
+
+                showToast('Account created successfully! Your User ID: ' + newUser.id, 'success');
+                showDashboard();
+            }, 500);
+        }
+
+        function logout() {
+            currentUser = null;
+            authEmail = '';
+            generatedOtp = '';
+            DemoStorage.clearCurrentUser();
+            document.getElementById('mainDashboard').classList.add('hidden');
+            document.getElementById('authPage').classList.remove('hidden');
+            // Reset auth form to email step
+            showAuthStep('email');
+            document.getElementById('authEmail').value = '';
+            showToast('Logged out successfully', 'info');
+        }
+
+        // ==================== NAVIGATION ====================
+        function setupNavigationListeners() {
+            document.querySelectorAll('.nav-item').forEach(item => {
+                item.addEventListener('click', () => {
+                    const page = item.dataset.page;
+                    navigateTo(page);
+                });
+            });
+
+            document.getElementById('quickReportBtn').addEventListener('click', () => {
+                navigateTo('report');
+            });
+        }
+
+        function navigateTo(page) {
+            // Hide all pages
+            document.querySelectorAll('.page').forEach(p => p.classList.add('hidden'));
+            
+            // Show selected page
+            document.getElementById(page + 'Page').classList.remove('hidden');
+
+            // Update navigation
+            document.querySelectorAll('.nav-item').forEach(item => {
+                if (item.dataset.page === page) {
+                    item.classList.add('active');
+                } else {
+                    item.classList.remove('active');
+                }
+            });
+
+            // Load page-specific data
+            switch(page) {
+                case 'home':
+                    loadHomeData();
+                    break;
+                case 'myreports':
+                    loadMyReports();
+                    break;
+                case 'shop':
+                    loadShopData();
+                    break;
+                case 'admin':
+                    loadAdminData();
+                    break;
+                case 'marketplace':
+                    loadMarketplaceData();
+                    break;
+                case 'orders':
+                    loadOrdersData();
+                    break;
+                case 'profile':
+                    loadProfileData();
+                    break;
+            }
+        }
+
+        function showDashboard() {
+            document.getElementById('authPage').classList.add('hidden');
+            document.getElementById('mainDashboard').classList.remove('hidden');
+
+            // Show/hide admin nav items
+            if (currentUser?.isAdmin || currentUser?.role === 'municipality') {
+                document.querySelectorAll('.admin-only').forEach(el => el.classList.remove('hidden'));
+            } else {
+                document.querySelectorAll('.admin-only').forEach(el => el.classList.add('hidden'));
+            }
+
+            // Show/hide recycler nav items
+            if (currentUser?.isRecycler || currentUser?.role === 'recycler') {
+                document.querySelectorAll('.recycler-only').forEach(el => el.classList.remove('hidden'));
+                document.querySelectorAll('.citizen-only').forEach(el => el.classList.add('hidden'));
+            } else {
+                document.querySelectorAll('.recycler-only').forEach(el => el.classList.add('hidden'));
+                document.querySelectorAll('.citizen-only').forEach(el => el.classList.remove('hidden'));
+            }
+
+            // Hide citizen elements for municipality
+            if (currentUser?.role === 'municipality' || currentUser?.isAdmin) {
+                document.querySelectorAll('.citizen-only').forEach(el => el.classList.add('hidden'));
+            }
+
+            // Navigate to appropriate home page based on role
+            if (currentUser?.role === 'recycler') {
+                navigateTo('marketplace');
+            } else {
+                navigateTo('home');
+            }
+        }
+
+        // ==================== HOME PAGE ====================
+        function loadHomeData() {
+            document.getElementById('userName').textContent = currentUser?.name?.split(' ')[0] || 'User';
+
+            const reports = DemoStorage.getReports();
+            const userReports = reports.filter(r => r.userId === currentUser?.id);
+
+            document.getElementById('totalReports').textContent = userReports.length;
+            document.getElementById('pendingReports').textContent = userReports.filter(r => r.status === 'submitted').length;
+            document.getElementById('collectedReports').textContent = userReports.filter(r => r.status === 'collected').length;
+            document.getElementById('userPoints').textContent = currentUser?.points || 0;
+
+            // Recent activity
+            const recentContainer = document.getElementById('recentActivity');
+            const recentReports = userReports.slice(-5).reverse();
+
+            if (recentReports.length === 0) {
+                recentContainer.innerHTML = '<p class="text-gray-500 text-center py-4">No recent activity</p>';
+            } else {
+                recentContainer.innerHTML = recentReports.map(report => `
+                    <div class="flex items-center gap-4 p-3 bg-gray-50 rounded-lg">
+                        <img src="${report.imageUrl}" class="w-12 h-12 rounded-lg object-cover cursor-pointer" onclick="showImage('${report.imageUrl}')">
+                        <div class="flex-1">
+                            <p class="font-medium text-gray-800">${getPlasticTypeName(report.plasticType)}</p>
+                            <p class="text-sm text-gray-500">${report.city} · ${formatDate(report.createdAt)}</p>
+                        </div>
+                        <span class="status-badge status-${report.status}">${capitalizeFirst(report.status)}</span>
+                    </div>
+                `).join('');
+            }
+        }
+
+        // ==================== CAMERA FUNCTIONS ====================
+        function setupCameraListeners() {
+            document.getElementById('openCameraBtn').addEventListener('click', openCamera);
+            document.getElementById('closeCameraBtn').addEventListener('click', closeCamera);
+            document.getElementById('captureBtn').addEventListener('click', capturePhoto);
+            document.getElementById('switchCameraBtn').addEventListener('click', switchCamera);
+            document.getElementById('closePreviewBtn').addEventListener('click', closePreview);
+            document.getElementById('retakeBtn').addEventListener('click', retakePhoto);
+            document.getElementById('confirmPhotoBtn').addEventListener('click', confirmPhoto);
+            document.getElementById('changePhotoBtn').addEventListener('click', openCamera);
+            document.getElementById('fileInput').addEventListener('change', handleFileUpload);
+            document.getElementById('closeImageModal').addEventListener('click', () => {
+                document.getElementById('imageModal').classList.remove('active');
+            });
+        }
+
+        async function openCamera() {
+            try {
+                const constraints = {
+                    video: {
+                        facingMode: facingMode,
+                        width: { ideal: 1920 },
+                        height: { ideal: 1080 }
+                    }
+                };
+
+                cameraStream = await navigator.mediaDevices.getUserMedia(constraints);
+                const video = document.getElementById('cameraVideo');
+                video.srcObject = cameraStream;
+                document.getElementById('cameraContainer').classList.add('active');
+            } catch (error) {
+                console.error('Camera error:', error);
+                showToast('Camera not available. Please upload an image instead.', 'error');
+            }
+        }
+
+        function closeCamera() {
+            if (cameraStream) {
+                cameraStream.getTracks().forEach(track => track.stop());
+                cameraStream = null;
+            }
+            document.getElementById('cameraContainer').classList.remove('active');
+        }
+
+        function capturePhoto() {
+            const video = document.getElementById('cameraVideo');
+            const canvas = document.getElementById('photoCanvas');
+            const context = canvas.getContext('2d');
+
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            context.drawImage(video, 0, 0);
+
+            capturedPhotoData = canvas.toDataURL('image/jpeg', 0.8);
+            document.getElementById('previewImage').src = capturedPhotoData;
+
+            closeCamera();
+            document.getElementById('previewContainer').classList.add('active');
+        }
+
+        async function switchCamera() {
+            facingMode = facingMode === 'environment' ? 'user' : 'environment';
+            closeCamera();
+            await openCamera();
+        }
+
+        function closePreview() {
+            document.getElementById('previewContainer').classList.remove('active');
+            capturedPhotoData = null;
+        }
+
+        function retakePhoto() {
+            closePreview();
+            openCamera();
+        }
+
+        function confirmPhoto() {
+            document.getElementById('previewContainer').classList.remove('active');
+            updatePhotoPreview(capturedPhotoData);
+        }
+
+        function handleFileUpload(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            // Validate file
+            if (!file.type.startsWith('image/')) {
+                showToast('Please select an image file', 'error');
+                return;
+            }
+
+            if (file.size > 10 * 1024 * 1024) {
+                showToast('Image must be less than 10MB', 'error');
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                capturedPhotoData = event.target.result;
+                updatePhotoPreview(capturedPhotoData);
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function updatePhotoPreview(imageUrl) {
+            document.getElementById('noPhotoState').classList.add('hidden');
+            document.getElementById('photoPreviewState').classList.remove('hidden');
+            document.getElementById('reportPhotoPreview').src = imageUrl;
+        }
+
+        function resetPhotoSection() {
+            document.getElementById('noPhotoState').classList.remove('hidden');
+            document.getElementById('photoPreviewState').classList.add('hidden');
+            document.getElementById('reportPhotoPreview').src = '';
+            capturedPhotoData = null;
+        }
+
+        function showImage(imageUrl) {
+            document.getElementById('modalImage').src = imageUrl;
+            document.getElementById('imageModal').classList.add('active');
+        }
+
+        // ==================== REPORT FORM ====================
+        function setupReportFormListeners() {
+            document.getElementById('reportForm').addEventListener('submit', async (e) => {
+                e.preventDefault();
+
+                if (!capturedPhotoData) {
+                    showToast('Please capture or upload a photo', 'error');
+                    return;
+                }
+
+                const quantity = document.querySelector('input[name="quantity"]:checked');
+                if (!quantity) {
+                    showToast('Please select a quantity', 'error');
+                    return;
+                }
+
+                document.getElementById('submitSpinner').classList.remove('hidden');
+                document.getElementById('submitReportBtn').disabled = true;
+
+                const report = {
+                    id: 'report_' + Date.now(),
+                    userId: currentUser.id,
+                    userName: currentUser.name,
+                    userEmail: currentUser.email,
+                    imageUrl: capturedPhotoData,
+                    plasticType: document.getElementById('plasticType').value,
+                    quantity: quantity.value,
+                    city: document.getElementById('city').value,
+                    description: document.getElementById('locationDesc').value,
+                    notes: document.getElementById('notes').value,
+                    status: 'submitted',
+                    createdAt: new Date().toISOString()
+                };
+
+                // Simulate upload delay
+                setTimeout(() => {
+                    const reports = DemoStorage.getReports();
+                    reports.push(report);
+                    DemoStorage.saveReports(reports);
+
+                    // Add points to user
+                    const users = DemoStorage.getUsers();
+                    const userIndex = users.findIndex(u => u.id === currentUser.id);
+                    if (userIndex !== -1) {
+                        users[userIndex].points = (users[userIndex].points || 0) + 10;
+                        DemoStorage.saveUsers(users);
+                        currentUser.points = users[userIndex].points;
+                        DemoStorage.saveCurrentUser(currentUser);
+                    }
+
+                    showToast('Report submitted successfully! +10 points', 'success');
+
+                    // Reset form
+                    document.getElementById('reportForm').reset();
+                    resetPhotoSection();
+                    document.getElementById('submitSpinner').classList.add('hidden');
+                    document.getElementById('submitReportBtn').disabled = false;
+
+                    // Navigate to my reports
+                    navigateTo('myreports');
+                }, 1000);
+            });
+        }
+
+        // ==================== MY REPORTS ====================
+        function loadMyReports() {
+            const reports = DemoStorage.getReports();
+            const userReports = reports.filter(r => r.userId === currentUser?.id).reverse();
+
+            const container = document.getElementById('myReportsList');
+
+            if (userReports.length === 0) {
+                container.innerHTML = `
+                    <div class="text-center py-12">
+                        <div class="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                            <i class="fas fa-file-alt text-2xl text-gray-400"></i>
+                        </div>
+                        <p class="text-gray-500">No reports yet</p>
+                        <p class="text-sm text-gray-400 mt-1">Start by reporting plastic waste in your area</p>
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = userReports.map(report => `
+                <div class="report-card bg-white rounded-xl shadow-sm overflow-hidden">
+                    <div class="flex flex-col md:flex-row">
+                        <img src="${report.imageUrl}" class="w-full md:w-48 h-48 object-cover cursor-pointer" onclick="showImage('${report.imageUrl}')">
+                        <div class="p-4 flex-1">
+                            <div class="flex items-start justify-between mb-2">
+                                <h3 class="font-bold text-gray-800">${getPlasticTypeName(report.plasticType)}</h3>
+                                <span class="status-badge status-${report.status}">${capitalizeFirst(report.status)}</span>
+                            </div>
+                            <div class="space-y-1 text-sm text-gray-600">
+                                <p><i class="fas fa-map-marker-alt w-5 text-gray-400"></i>${report.city}</p>
+                                <p><i class="fas fa-info-circle w-5 text-gray-400"></i>${report.description}</p>
+                                <p><i class="fas fa-box w-5 text-gray-400"></i>Quantity: ${capitalizeFirst(report.quantity)}</p>
+                                <p><i class="fas fa-clock w-5 text-gray-400"></i>${formatDate(report.createdAt)}</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // ==================== ADMIN PANEL ====================
+        function setupAdminListeners() {
+            document.getElementById('filterCity').addEventListener('change', loadAdminData);
+            document.getElementById('filterStatus').addEventListener('change', loadAdminData);
+            document.getElementById('filterDateFrom').addEventListener('change', loadAdminData);
+            document.getElementById('filterDateTo').addEventListener('change', loadAdminData);
+            document.getElementById('exportCsvBtn').addEventListener('click', exportToCSV);
+        }
+
+        function loadAdminData() {
+            let reports = DemoStorage.getReports();
+            allReports = [...reports];
+
+            // Update city filter options
+            const cities = [...new Set(reports.map(r => r.city))];
+            const citySelect = document.getElementById('filterCity');
+            const currentCity = citySelect.value;
+            citySelect.innerHTML = '<option value="">All Cities</option>' + 
+                cities.map(city => `<option value="${city}" ${city === currentCity ? 'selected' : ''}>${city}</option>`).join('');
+
+            // Apply filters
+            const filterCity = document.getElementById('filterCity').value;
+            const filterStatus = document.getElementById('filterStatus').value;
+            const filterDateFrom = document.getElementById('filterDateFrom').value;
+            const filterDateTo = document.getElementById('filterDateTo').value;
+
+            if (filterCity) {
+                reports = reports.filter(r => r.city === filterCity);
+            }
+            if (filterStatus) {
+                reports = reports.filter(r => r.status === filterStatus);
+            }
+            if (filterDateFrom) {
+                reports = reports.filter(r => new Date(r.createdAt) >= new Date(filterDateFrom));
+            }
+            if (filterDateTo) {
+                const toDate = new Date(filterDateTo);
+                toDate.setHours(23, 59, 59, 999);
+                reports = reports.filter(r => new Date(r.createdAt) <= toDate);
+            }
+
+            // Update stats
+            document.getElementById('adminTotalReports').textContent = reports.length;
+            document.getElementById('adminSubmitted').textContent = reports.filter(r => r.status === 'submitted').length;
+            document.getElementById('adminVerified').textContent = reports.filter(r => r.status === 'verified').length;
+            document.getElementById('adminCollected').textContent = reports.filter(r => r.status === 'collected').length;
+
+            // Render table
+            const tbody = document.getElementById('adminReportsTable');
+            
+            if (reports.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" class="px-4 py-8 text-center text-gray-500">No reports found</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = reports.reverse().map(report => `
+                <tr class="hover:bg-gray-50">
+                    <td class="px-4 py-3">
+                        <img src="${report.imageUrl}" class="w-16 h-16 rounded-lg object-cover cursor-pointer" onclick="showImage('${report.imageUrl}')">
+                    </td>
+                    <td class="px-4 py-3">
+                        <p class="font-medium text-gray-800">${getPlasticTypeName(report.plasticType)}</p>
+                        <p class="text-sm text-gray-500">Qty: ${capitalizeFirst(report.quantity)}</p>
+                        <p class="text-xs text-gray-400">${formatDate(report.createdAt)}</p>
+                    </td>
+                    <td class="px-4 py-3">
+                        <p class="font-medium text-gray-800">${report.city}</p>
+                        <p class="text-sm text-gray-500 max-w-xs truncate">${report.description}</p>
+                        <p class="text-xs text-gray-400">By: ${report.userName}</p>
+                    </td>
+                    <td class="px-4 py-3">
+                        <span class="status-badge status-${report.status}">${capitalizeFirst(report.status)}</span>
+                    </td>
+                    <td class="px-4 py-3">
+                        <select onchange="updateReportStatus('${report.id}', this.value)" class="px-3 py-2 border border-gray-300 rounded-lg text-sm">
+                            <option value="submitted" ${report.status === 'submitted' ? 'selected' : ''}>Submitted</option>
+                            <option value="verified" ${report.status === 'verified' ? 'selected' : ''}>Verified</option>
+                            <option value="collected" ${report.status === 'collected' ? 'selected' : ''}>Collected</option>
+                        </select>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function updateReportStatus(reportId, newStatus) {
+            const reports = DemoStorage.getReports();
+            const reportIndex = reports.findIndex(r => r.id === reportId);
+            
+            if (reportIndex !== -1) {
+                const oldStatus = reports[reportIndex].status;
+                reports[reportIndex].status = newStatus;
+                DemoStorage.saveReports(reports);
+
+                // Award points for status changes
+                if (newStatus === 'verified' && oldStatus === 'submitted') {
+                    awardPoints(reports[reportIndex].userId, 5);
+                } else if (newStatus === 'collected' && oldStatus !== 'collected') {
+                    awardPoints(reports[reportIndex].userId, 15);
+                }
+
+                showToast('Status updated successfully', 'success');
+                loadAdminData();
+            }
+        }
+
+        function awardPoints(userId, points) {
+            const users = DemoStorage.getUsers();
+            const userIndex = users.findIndex(u => u.id === userId);
+            if (userIndex !== -1) {
+                users[userIndex].points = (users[userIndex].points || 0) + points;
+                DemoStorage.saveUsers(users);
+                
+                if (currentUser?.id === userId) {
+                    currentUser.points = users[userIndex].points;
+                    DemoStorage.saveCurrentUser(currentUser);
+                }
+            }
+        }
+
+        function exportToCSV() {
+            const reports = DemoStorage.getReports();
+            
+            if (reports.length === 0) {
+                showToast('No reports to export', 'error');
+                return;
+            }
+
+            const headers = ['Report ID', 'User Name', 'User Email', 'Plastic Type', 'Quantity', 'City', 'Description', 'Notes', 'Status', 'Created At'];
+            const rows = reports.map(r => [
+                r.id,
+                r.userName,
+                r.userEmail,
+                getPlasticTypeName(r.plasticType),
+                r.quantity,
+                r.city,
+                `"${r.description.replace(/"/g, '""')}"`,
+                `"${(r.notes || '').replace(/"/g, '""')}"`,
+                r.status,
+                r.createdAt
+            ]);
+
+            const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `ecoreport-export-${new Date().toISOString().split('T')[0]}.csv`;
+            a.click();
+            URL.revokeObjectURL(url);
+
+            showToast('CSV exported successfully', 'success');
+        }
+
+        // ==================== PROFILE ====================
+        function loadProfileData() {
+            document.getElementById('profileName').textContent = currentUser?.name || 'User';
+            document.getElementById('profileEmail').textContent = currentUser?.email || '';
+            
+            // Set badge based on role
+            let badgeText = 'Citizen';
+            let badgeClass = 'inline-block mt-1 px-3 py-1 bg-green-100 text-green-700 text-sm rounded-full font-medium';
+            
+            if (currentUser?.role === 'municipality' || currentUser?.isAdmin) {
+                badgeText = 'Municipality Admin';
+                badgeClass = 'inline-block mt-1 px-3 py-1 bg-purple-100 text-purple-700 text-sm rounded-full font-medium';
+            } else if (currentUser?.role === 'recycler' || currentUser?.isRecycler) {
+                badgeText = 'Recycling Plant';
+                badgeClass = 'inline-block mt-1 px-3 py-1 bg-blue-100 text-blue-700 text-sm rounded-full font-medium';
+            }
+            
+            document.getElementById('profileBadge').textContent = badgeText;
+            document.getElementById('profileBadge').className = badgeClass;
+
+            // Show company name for recyclers
+            if (currentUser?.companyName) {
+                document.getElementById('profileName').textContent = currentUser.name + ' (' + currentUser.companyName + ')';
+            }
+
+            const reports = DemoStorage.getReports();
+            const userReports = reports.filter(r => r.userId === currentUser?.id);
+
+            document.getElementById('profileReports').textContent = userReports.length;
+            document.getElementById('profilePoints').textContent = currentUser?.points || 0;
+            document.getElementById('profileVerified').textContent = userReports.filter(r => r.status === 'verified').length;
+            document.getElementById('profileCollected').textContent = userReports.filter(r => r.status === 'collected').length;
+        }
+
+        // ==================== UTILITIES ====================
+        function showToast(message, type = 'info') {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.className = `toast ${type} show`;
+            setTimeout(() => {
+                toast.classList.remove('show');
+            }, 3000);
+        }
+
+        function getPlasticTypeName(type) {
+            const types = {
+                'pet': 'PET Bottles',
+                'hdpe': 'HDPE Containers',
+                'pvc': 'PVC Items',
+                'ldpe': 'LDPE Bags/Films',
+                'pp': 'Polypropylene',
+                'ps': 'Polystyrene/Styrofoam',
+                'mixed': 'Mixed Plastics',
+                'other': 'Other'
+            };
+            return types[type] || type;
+        }
+
+        function capitalizeFirst(str) {
+            return str.charAt(0).toUpperCase() + str.slice(1);
+        }
+
+        function formatDate(dateStr) {
+            const date = new Date(dateStr);
+            return date.toLocaleDateString('en-US', {
+                year: 'numeric',
+                month: 'short',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        }
+
+        // ==================== MARKETPLACE FUNCTIONS ====================
+        let selectedReportForPurchase = null;
+
+        function setupMarketplaceListeners() {
+            document.getElementById('applyMarketFilters').addEventListener('click', loadMarketplaceData);
+            document.getElementById('closePurchaseModal').addEventListener('click', () => {
+                document.getElementById('purchaseModal').classList.remove('active');
+                selectedReportForPurchase = null;
+            });
+            document.getElementById('confirmPurchaseBtn').addEventListener('click', confirmPurchase);
+        }
+
+        function loadMarketplaceData() {
+            let reports = DemoStorage.getReports();
+            
+            // Only show collected reports (available for sale)
+            reports = reports.filter(r => r.status === 'collected' && !r.soldTo);
+
+            // Update city filter options
+            const cities = [...new Set(reports.map(r => r.city))];
+            const citySelect = document.getElementById('marketFilterCity');
+            const currentCity = citySelect.value;
+            citySelect.innerHTML = '<option value="">All Cities</option>' + 
+                cities.map(city => `<option value="${city}" ${city === currentCity ? 'selected' : ''}>${city}</option>`).join('');
+
+            // Apply filters
+            const filterType = document.getElementById('marketFilterType').value;
+            const filterCity = document.getElementById('marketFilterCity').value;
+            const filterQuantity = document.getElementById('marketFilterQuantity').value;
+
+            if (filterType) {
+                reports = reports.filter(r => r.plasticType === filterType);
+            }
+            if (filterCity) {
+                reports = reports.filter(r => r.city === filterCity);
+            }
+            if (filterQuantity) {
+                reports = reports.filter(r => r.quantity === filterQuantity);
+            }
+
+            // Calculate stats
+            document.getElementById('availableLots').textContent = reports.length;
+            
+            let totalWeight = 0;
+            reports.forEach(r => {
+                if (r.quantity === 'small') totalWeight += 0.5;
+                else if (r.quantity === 'medium') totalWeight += 3;
+                else if (r.quantity === 'large') totalWeight += 10;
+            });
+            document.getElementById('totalWeight').textContent = totalWeight + ' kg';
+            
+            document.getElementById('citiesAvailable').textContent = [...new Set(reports.map(r => r.city))].length;
+            
+            const orders = DemoStorage.getOrders();
+            document.getElementById('myPurchases').textContent = orders.filter(o => o.buyerId === currentUser?.id).length;
+
+            // Render listings
+            const container = document.getElementById('marketplaceListings');
+            
+            if (reports.length === 0) {
+                container.innerHTML = `
+                    <div class="col-span-full text-center py-12">
+                        <div class="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                            <i class="fas fa-box-open text-2xl text-gray-400"></i>
+                        </div>
+                        <p class="text-gray-500">No collected waste available for purchase</p>
+                        <p class="text-sm text-gray-400 mt-1">Check back later for new listings</p>
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = reports.map(report => `
+                <div class="bg-white rounded-xl shadow-sm overflow-hidden report-card">
+                    <img src="${report.imageUrl}" class="w-full h-48 object-cover cursor-pointer" onclick="showImage('${report.imageUrl}')">
+                    <div class="p-4">
+                        <div class="flex items-start justify-between mb-2">
+                            <h3 class="font-bold text-gray-800">${getPlasticTypeName(report.plasticType)}</h3>
+                            <span class="status-badge status-collected">Available</span>
+                        </div>
+                        <div class="space-y-1 text-sm text-gray-600 mb-4">
+                            <p><i class="fas fa-map-marker-alt w-5 text-gray-400"></i>${report.city}</p>
+                            <p><i class="fas fa-box w-5 text-gray-400"></i>Quantity: ${capitalizeFirst(report.quantity)}</p>
+                            <p><i class="fas fa-clock w-5 text-gray-400"></i>${formatDate(report.createdAt)}</p>
+                        </div>
+                        <button onclick="openPurchaseModal('${report.id}')" class="w-full py-2 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition">
+                            <i class="fas fa-shopping-cart mr-2"></i>Buy Now
+                        </button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function openPurchaseModal(reportId) {
+            const reports = DemoStorage.getReports();
+            const report = reports.find(r => r.id === reportId);
+            
+            if (!report) {
+                showToast('Report not found', 'error');
+                return;
+            }
+
+            selectedReportForPurchase = report;
+
+            document.getElementById('purchaseDetails').innerHTML = `
+                <div class="flex gap-4 p-4 bg-gray-50 rounded-lg">
+                    <img src="${report.imageUrl}" class="w-20 h-20 rounded-lg object-cover">
+                    <div>
+                        <h4 class="font-bold text-gray-800">${getPlasticTypeName(report.plasticType)}</h4>
+                        <p class="text-sm text-gray-600"><i class="fas fa-map-marker-alt mr-1"></i>${report.city}</p>
+                        <p class="text-sm text-gray-600"><i class="fas fa-box mr-1"></i>${capitalizeFirst(report.quantity)}</p>
+                    </div>
+                </div>
+            `;
+
+            document.getElementById('offerPrice').value = '';
+            document.getElementById('pickupNotes').value = '';
+            document.getElementById('purchaseModal').classList.add('active');
+        }
+
+        function confirmPurchase() {
+            if (!selectedReportForPurchase) {
+                showToast('No report selected', 'error');
+                return;
+            }
+
+            const offerPrice = document.getElementById('offerPrice').value;
+            const pickupNotes = document.getElementById('pickupNotes').value;
+
+            if (!offerPrice || offerPrice <= 0) {
+                showToast('Please enter a valid offer price', 'error');
+                return;
+            }
+
+            document.getElementById('purchaseSpinner').classList.remove('hidden');
+            document.getElementById('confirmPurchaseBtn').disabled = true;
+
+            setTimeout(() => {
+                const order = {
+                    id: 'order_' + Date.now(),
+                    reportId: selectedReportForPurchase.id,
+                    buyerId: currentUser.id,
+                    buyerName: currentUser.name,
+                    buyerCompany: currentUser.companyName || '',
+                    sellerId: selectedReportForPurchase.userId,
+                    plasticType: selectedReportForPurchase.plasticType,
+                    quantity: selectedReportForPurchase.quantity,
+                    city: selectedReportForPurchase.city,
+                    imageUrl: selectedReportForPurchase.imageUrl,
+                    offerPrice: parseFloat(offerPrice),
+                    pickupNotes,
+                    status: 'pending',
+                    createdAt: new Date().toISOString()
+                };
+
+                const orders = DemoStorage.getOrders();
+                orders.push(order);
+                DemoStorage.saveOrders(orders);
+
+                // Mark report as sold
+                const reports = DemoStorage.getReports();
+                const reportIndex = reports.findIndex(r => r.id === selectedReportForPurchase.id);
+                if (reportIndex !== -1) {
+                    reports[reportIndex].soldTo = currentUser.id;
+                    reports[reportIndex].status = 'sold';
+                    DemoStorage.saveReports(reports);
+                }
+
+                document.getElementById('purchaseSpinner').classList.add('hidden');
+                document.getElementById('confirmPurchaseBtn').disabled = false;
+                document.getElementById('purchaseModal').classList.remove('active');
+                
+                selectedReportForPurchase = null;
+                showToast('Purchase request submitted successfully!', 'success');
+                loadMarketplaceData();
+            }, 500);
+        }
+
+        function loadOrdersData() {
+            const orders = DemoStorage.getOrders();
+            const userOrders = orders.filter(o => o.buyerId === currentUser?.id).reverse();
+
+            // Update stats
+            document.getElementById('totalOrders').textContent = userOrders.length;
+            document.getElementById('pendingOrders').textContent = userOrders.filter(o => o.status === 'pending').length;
+            document.getElementById('confirmedOrders').textContent = userOrders.filter(o => o.status === 'confirmed').length;
+            document.getElementById('deliveredOrders').textContent = userOrders.filter(o => o.status === 'delivered').length;
+
+            const container = document.getElementById('ordersList');
+
+            if (userOrders.length === 0) {
+                container.innerHTML = `
+                    <div class="text-center py-12">
+                        <div class="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                            <i class="fas fa-shopping-cart text-2xl text-gray-400"></i>
+                        </div>
+                        <p class="text-gray-500">No orders yet</p>
+                        <p class="text-sm text-gray-400 mt-1">Browse the marketplace to purchase plastic waste</p>
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = userOrders.map(order => `
+                <div class="bg-white rounded-xl shadow-sm overflow-hidden">
+                    <div class="flex flex-col md:flex-row">
+                        <img src="${order.imageUrl}" class="w-full md:w-48 h-48 object-cover cursor-pointer" onclick="showImage('${order.imageUrl}')">
+                        <div class="p-4 flex-1">
+                            <div class="flex items-start justify-between mb-2">
+                                <h3 class="font-bold text-gray-800">${getPlasticTypeName(order.plasticType)}</h3>
+                                <span class="status-badge status-${order.status}">${capitalizeFirst(order.status)}</span>
+                            </div>
+                            <div class="space-y-1 text-sm text-gray-600">
+                                <p><i class="fas fa-hashtag w-5 text-gray-400"></i>Order ID: ${order.id}</p>
+                                <p><i class="fas fa-map-marker-alt w-5 text-gray-400"></i>${order.city}</p>
+                                <p><i class="fas fa-box w-5 text-gray-400"></i>Quantity: ${capitalizeFirst(order.quantity)}</p>
+                                <p><i class="fas fa-rupee-sign w-5 text-gray-400"></i>Offered: ₹${order.offerPrice}</p>
+                                <p><i class="fas fa-clock w-5 text-gray-400"></i>${formatDate(order.createdAt)}</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // ==================== ECO SHOP FUNCTIONS ====================
+        let cart = [];
+        let currentShopCategory = 'all';
+
+        // Eco-friendly products made from recycled plastic
+        const ecoProducts = [
+            {
+                id: 'prod_1',
+                name: 'Recycled Tote Bag',
+                description: 'Durable shopping bag made from recycled PET bottles',
+                price: 149,
+                originalPrice: 299,
+                category: 'bags',
+                image: 'https://images.unsplash.com/photo-1597633425046-08f5110420b5?w=300&h=300&fit=crop',
+                badge: '50% OFF',
+                material: '100% Recycled PET'
+            },
+            {
+                id: 'prod_2',
+                name: 'Eco Planter Pot',
+                description: 'Beautiful plant pot made from recycled plastic',
+                price: 89,
+                originalPrice: 150,
+                category: 'home',
+                image: 'https://images.unsplash.com/photo-1485955900006-10f4d324d411?w=300&h=300&fit=crop',
+                badge: 'Bestseller',
+                material: 'Recycled HDPE'
+            },
+            {
+                id: 'prod_3',
+                name: 'Recycled Pen Set (5 pcs)',
+                description: 'Smooth writing pens from recycled materials',
+                price: 49,
+                originalPrice: 99,
+                category: 'stationery',
+                image: 'https://images.unsplash.com/photo-1583485088034-697b5bc54ccd?w=300&h=300&fit=crop',
+                badge: 'Eco Choice',
+                material: 'Recycled Plastic'
+            },
+            {
+                id: 'prod_4',
+                name: 'Eco Lunch Box',
+                description: 'Leak-proof lunch container from recycled plastic',
+                price: 199,
+                originalPrice: 350,
+                category: 'home',
+                image: 'https://images.unsplash.com/photo-1594212699903-ec8a3eca50f5?w=300&h=300&fit=crop',
+                badge: 'New',
+                material: 'Food-safe Recycled PP'
+            },
+            {
+                id: 'prod_5',
+                name: 'Recycled Backpack',
+                description: 'Stylish backpack made from ocean plastic',
+                price: 499,
+                originalPrice: 999,
+                category: 'bags',
+                image: 'https://images.unsplash.com/photo-1553062407-98eeb64c6a62?w=300&h=300&fit=crop',
+                badge: 'Ocean Plastic',
+                material: 'Recycled Ocean Plastic'
+            },
+            {
+                id: 'prod_6',
+                name: 'Eco Coaster Set (4 pcs)',
+                description: 'Colorful coasters from recycled bottle caps',
+                price: 79,
+                originalPrice: 149,
+                category: 'home',
+                image: 'https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=300&h=300&fit=crop',
+                badge: 'Handmade',
+                material: 'Recycled Bottle Caps'
+            },
+            {
+                id: 'prod_7',
+                name: 'Recycled Notebook',
+                description: 'A5 notebook with recycled plastic cover',
+                price: 69,
+                originalPrice: 120,
+                category: 'stationery',
+                image: 'https://images.unsplash.com/photo-1531346878377-a5be20888e57?w=300&h=300&fit=crop',
+                badge: '40% OFF',
+                material: 'Recycled PET Cover'
+            },
+            {
+                id: 'prod_8',
+                name: 'Eco Sunglasses',
+                description: 'Trendy sunglasses from recycled plastic',
+                price: 299,
+                originalPrice: 599,
+                category: 'accessories',
+                image: 'https://images.unsplash.com/photo-1572635196237-14b3f281503f?w=300&h=300&fit=crop',
+                badge: '50% OFF',
+                material: 'Recycled Plastic Frame'
+            },
+            {
+                id: 'prod_9',
+                name: 'Garden Tool Set',
+                description: 'Durable garden tools with recycled handles',
+                price: 249,
+                originalPrice: 450,
+                category: 'home',
+                image: 'https://images.unsplash.com/photo-1416879595882-3373a0480b5b?w=300&h=300&fit=crop',
+                badge: 'Durable',
+                material: 'Recycled Plastic Handles'
+            },
+            {
+                id: 'prod_10',
+                name: 'Eco Phone Case',
+                description: 'Protective phone case from recycled plastic',
+                price: 149,
+                originalPrice: 299,
+                category: 'accessories',
+                image: 'https://images.unsplash.com/photo-1601593346740-925612772716?w=300&h=300&fit=crop',
+                badge: 'Popular',
+                material: '100% Recycled Plastic'
+            },
+            {
+                id: 'prod_11',
+                name: 'Recycled Pencil Box',
+                description: 'Sturdy pencil case for students',
+                price: 59,
+                originalPrice: 99,
+                category: 'stationery',
+                image: 'https://images.unsplash.com/photo-1513542789411-b6a5d4f31634?w=300&h=300&fit=crop',
+                badge: 'For Kids',
+                material: 'Recycled HDPE'
+            },
+            {
+                id: 'prod_12',
+                name: 'Eco Keychain Set',
+                description: 'Cute keychains from recycled plastic',
+                price: 39,
+                originalPrice: 79,
+                category: 'accessories',
+                image: 'https://images.unsplash.com/photo-1609709295948-17d77cb2a69b?w=300&h=300&fit=crop',
+                badge: 'Gift Idea',
+                material: 'Recycled Mixed Plastic'
+            }
+        ];
+
+        function setupShopListeners() {
+            // Category filter buttons
+            document.querySelectorAll('.shop-category-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    document.querySelectorAll('.shop-category-btn').forEach(b => {
+                        b.classList.remove('bg-green-600', 'text-white');
+                        b.classList.add('bg-gray-200', 'text-gray-700');
+                    });
+                    btn.classList.remove('bg-gray-200', 'text-gray-700');
+                    btn.classList.add('bg-green-600', 'text-white');
+                    currentShopCategory = btn.dataset.category;
+                    renderProducts();
+                });
+            });
+        }
+
+        function loadShopData() {
+            // Load cart from storage
+            cart = JSON.parse(localStorage.getItem('eco_cart') || '[]');
+            
+            // Update user points display
+            document.getElementById('shopUserPoints').textContent = currentUser?.points || 0;
+            
+            // Render products
+            renderProducts();
+            
+            // Update cart UI
+            updateCartUI();
+            
+            // Setup listeners if not already done
+            setupShopListeners();
+        }
+
+        function renderProducts() {
+            const container = document.getElementById('shopProductsGrid');
+            let products = ecoProducts;
+            
+            if (currentShopCategory !== 'all') {
+                products = ecoProducts.filter(p => p.category === currentShopCategory);
+            }
+
+            container.innerHTML = products.map(product => `
+                <div class="bg-white rounded-xl shadow-sm overflow-hidden hover:shadow-md transition">
+                    <div class="relative">
+                        <img src="${product.image}" alt="${product.name}" class="w-full h-40 object-cover">
+                        <span class="absolute top-2 left-2 px-2 py-1 bg-green-500 text-white text-xs font-bold rounded-full">${product.badge}</span>
+                    </div>
+                    <div class="p-3">
+                        <h3 class="font-semibold text-gray-800 text-sm mb-1 truncate">${product.name}</h3>
+                        <p class="text-xs text-gray-500 mb-2 truncate">${product.material}</p>
+                        <div class="flex items-center gap-2 mb-2">
+                            <span class="text-lg font-bold text-green-600">₹${product.price}</span>
+                            <span class="text-sm text-gray-400 line-through">₹${product.originalPrice}</span>
+                        </div>
+                        <button onclick="addToCart('${product.id}')" class="w-full py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 transition">
+                            <i class="fas fa-cart-plus mr-1"></i>Add to Cart
+                        </button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function addToCart(productId) {
+            const product = ecoProducts.find(p => p.id === productId);
+            if (!product) return;
+
+            const existingItem = cart.find(item => item.id === productId);
+            if (existingItem) {
+                existingItem.quantity += 1;
+            } else {
+                cart.push({ ...product, quantity: 1 });
+            }
+
+            saveCart();
+            updateCartUI();
+            showToast(`${product.name} added to cart!`, 'success');
+        }
+
+        function removeFromCart(productId) {
+            cart = cart.filter(item => item.id !== productId);
+            saveCart();
+            updateCartUI();
+            renderCartItems();
+        }
+
+        function updateCartQuantity(productId, change) {
+            const item = cart.find(i => i.id === productId);
+            if (item) {
+                item.quantity += change;
+                if (item.quantity <= 0) {
+                    removeFromCart(productId);
+                } else {
+                    saveCart();
+                    updateCartUI();
+                    renderCartItems();
+                }
+            }
+        }
+
+        function saveCart() {
+            localStorage.setItem('eco_cart', JSON.stringify(cart));
+        }
+
+        function updateCartUI() {
+            const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
+            const cartBadge = document.getElementById('cartBadge');
+            const cartFloatingBtn = document.getElementById('cartFloatingBtn');
+            
+            if (cartBadge) cartBadge.textContent = totalItems;
+            
+            if (cartFloatingBtn) {
+                if (totalItems > 0) {
+                    cartFloatingBtn.classList.remove('hidden');
+                } else {
+                    cartFloatingBtn.classList.add('hidden');
+                }
+            }
+
+            // Update checkout button
+            const checkoutBtn = document.getElementById('checkoutBtn');
+            if (checkoutBtn) {
+                checkoutBtn.disabled = cart.length === 0;
+            }
+        }
+
+        function openCart() {
+            renderCartItems();
+            document.getElementById('cartModal').classList.add('active');
+        }
+
+        function closeCart() {
+            document.getElementById('cartModal').classList.remove('active');
+        }
+
+        function renderCartItems() {
+            const container = document.getElementById('cartItems');
+            const totalEl = document.getElementById('cartTotal');
+
+            if (cart.length === 0) {
+                container.innerHTML = '<p class="text-center text-gray-500 py-8">Your cart is empty</p>';
+                totalEl.textContent = '₹0';
+                return;
+            }
+
+            const total = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+
+            container.innerHTML = cart.map(item => `
+                <div class="flex items-center gap-3 p-3 bg-gray-50 rounded-lg mb-3">
+                    <img src="${item.image}" alt="${item.name}" class="w-16 h-16 object-cover rounded-lg">
+                    <div class="flex-1">
+                        <h4 class="font-medium text-gray-800 text-sm">${item.name}</h4>
+                        <p class="text-green-600 font-bold">₹${item.price}</p>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <button onclick="updateCartQuantity('${item.id}', -1)" class="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center hover:bg-gray-300">
+                            <i class="fas fa-minus text-xs"></i>
+                        </button>
+                        <span class="font-bold w-6 text-center">${item.quantity}</span>
+                        <button onclick="updateCartQuantity('${item.id}', 1)" class="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center hover:bg-gray-300">
+                            <i class="fas fa-plus text-xs"></i>
+                        </button>
+                    </div>
+                    <button onclick="removeFromCart('${item.id}')" class="w-8 h-8 text-red-500 hover:bg-red-50 rounded-full flex items-center justify-center">
+                        <i class="fas fa-trash text-sm"></i>
+                    </button>
+                </div>
+            `).join('');
+
+            totalEl.textContent = `₹${total}`;
+        }
+
+        function checkout() {
+            if (cart.length === 0) {
+                showToast('Your cart is empty', 'error');
+                return;
+            }
+
+            const total = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+
+            // Create shop order
+            const shopOrders = JSON.parse(localStorage.getItem('eco_shop_orders') || '[]');
+            const order = {
+                id: 'shop_order_' + Date.now(),
+                userId: currentUser.id,
+                userName: currentUser.name,
+                items: [...cart],
+                total: total,
+                status: 'confirmed',
+                createdAt: new Date().toISOString()
+            };
+            shopOrders.push(order);
+            localStorage.setItem('eco_shop_orders', JSON.stringify(shopOrders));
+
+            // Clear cart
+            cart = [];
+            saveCart();
+            updateCartUI();
+            closeCart();
+
+            showToast(`Order placed successfully! Total: ₹${total}`, 'success');
+        }
+    </script>
+</body>
+</html>
